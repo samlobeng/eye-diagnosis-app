@@ -179,13 +179,13 @@ export default function LoginScreen() {
             <View style={styles.dividerLine} />
           </View>
 
-          <TouchableOpacity 
+          {/* <TouchableOpacity 
             style={styles.googleButton} 
             onPress={handleGoogleLogin}
             disabled={loading}
           >
             <Text style={styles.googleButtonText}>Continue with Google</Text>
-          </TouchableOpacity>
+          </TouchableOpacity> */}
 
           <View style={styles.registerContainer}>
             <Text style={styles.registerText}>Don't have an account? </Text>

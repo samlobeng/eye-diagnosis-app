@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { Camera, CameraType } from 'expo-camera';
-import { useRouter, Redirect } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -103,7 +103,7 @@ export default function ScanScreen() {
       'Your account needs to be approved before you can use this feature.',
       [{ text: 'OK', onPress: () => router.replace('/(tabs)') }]
     );
-    return <Redirect href="/(tabs)" />;
+    return null;
   }
 
   // Rest of your existing component code...
