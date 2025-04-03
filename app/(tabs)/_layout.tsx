@@ -1,6 +1,6 @@
 import { Tabs } from 'expo-router';
-import { Platform } from 'react-native';
-import { Chrome as Home, FileText, Stethoscope, ShoppingBag, Settings } from 'lucide-react-native';
+import { Platform, View } from 'react-native';
+import { Users, Home, Stethoscope, ShoppingBag, Settings } from 'lucide-react-native';
 
 export default function TabLayout() {
   return (
@@ -40,17 +40,10 @@ export default function TabLayout() {
         },
       }}>
       <Tabs.Screen
-        name="index"
+        name="patients"
         options={{
-          title: 'Home',
-          tabBarIcon: ({ color, size }) => <Home size={size} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="reports"
-        options={{
-          title: 'Reports',
-          tabBarIcon: ({ color, size }) => <FileText size={size} color={color} />,
+          title: 'Patients',
+          tabBarIcon: ({ color, size }) => <Users size={size} color={color} />,
         }}
       />
       <Tabs.Screen
@@ -58,6 +51,25 @@ export default function TabLayout() {
         options={{
           title: 'Doctors',
           tabBarIcon: ({ color, size }) => <Stethoscope size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="home"
+        options={{
+          title: 'Home',
+          tabBarIcon: ({ color, size }) => (
+            <View style={{
+              backgroundColor: '#007AFF',
+              width: 56,
+              height: 56,
+              borderRadius: 28,
+              justifyContent: 'center',
+              alignItems: 'center',
+              marginBottom: Platform.OS === 'ios' ? 20 : 0,
+            }}>
+              <Home size={size} color="#ffffff" />
+            </View>
+          ),
         }}
       />
       <Tabs.Screen

@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { StyleSheet, View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView, Alert } from 'react-native';
 import { Eye, EyeOff, LogIn } from 'lucide-react-native';
 import { useRouter, Redirect } from 'expo-router';
-import { signIn, signInWithGoogle } from '@/lib/auth';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
 
@@ -16,7 +15,7 @@ export default function LoginScreen() {
 
   // If user is already authenticated, redirect to tabs
   if (user) {
-    return <Redirect href="/(tabs)" />;
+    return <Redirect href="/(tabs)/home" />;
   }
 
   const handleLogin = async () => {
@@ -27,77 +26,100 @@ export default function LoginScreen() {
 
     setLoading(true);
     try {
-      // Sign in and get session
+      // First attempt to sign in to get the user ID
+      console.log('Attempting to sign in...');
       const { data: { session }, error: signInError } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
-      if (signInError) throw signInError;
-      if (!session) throw new Error('No session after sign in');
-
-      // Check if user is admin by querying admin_profiles directly
-      const { data: adminData, error: adminError } = await supabase
-        .from('admin_profiles')
-        .select('id')
-        .eq('id', session.user.id)
-        .single();
-
-      if (adminError && adminError.code !== 'PGRST116') { // PGRST116 is "no rows returned"
-        console.error('Admin check error:', adminError);
-        throw adminError;
-      }
-
-      // If user is admin, allow login and redirect to admin screen
-      if (adminData) {
-        router.replace('/pending-users');
+      if (signInError) {
+        console.error('Sign in error:', signInError);
+        Alert.alert('Error', 'Invalid email or password');
         return;
       }
 
-      // For regular users, check their verification status
+      if (!session) {
+        throw new Error('No session after sign in');
+      }
+
+      console.log('User signed in successfully. User ID:', session.user.id);
+
+      // Now check the verification status using a direct query
+      console.log('Checking user verification status...');
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
-        .select('verification_status')
+        .select('id, verification_status, is_admin')
         .eq('id', session.user.id)
         .single();
 
       if (profileError) {
         console.error('Profile check error:', profileError);
+        // If profile doesn't exist, create it
+        if (profileError.code === 'PGRST116') {
+          console.log('Profile not found, creating new profile...');
+          const { error: insertError } = await supabase
+            .from('profiles')
+            .insert([
+              {
+                id: session.user.id,
+                verification_status: 'pending',
+                is_admin: false
+              }
+            ]);
+
+          if (insertError) {
+            console.error('Profile creation error:', insertError);
+            throw insertError;
+          }
+
+          // After creating profile, show pending approval message
+          await supabase.auth.signOut();
+          Alert.alert(
+            'Account Pending',
+            'Your account is pending approval. Please wait for admin verification.',
+            [
+              {
+                text: 'OK',
+                onPress: () => router.replace('/'),
+              },
+            ]
+          );
+          return;
+        }
         throw profileError;
       }
 
       if (!profileData) {
-        throw new Error('Profile not found');
+        Alert.alert('Error', 'Profile not found');
+        return;
       }
 
-      // Check verification status
+      console.log('User verification status:', profileData.verification_status);
+
+      // If user is not approved, prevent access
       if (profileData.verification_status !== 'approved') {
-        // Sign out the user if not approved
+        console.log('User not approved, signing out and showing alert...');
         await supabase.auth.signOut();
+        
         Alert.alert(
-          'Account Not Approved',
-          'Your account is pending approval. Please wait for an administrator to approve your account.',
-          [{ text: 'OK' }]
+          'Account Pending',
+          'Your account is pending approval. Please wait for admin verification.',
+          [
+            {
+              text: 'OK',
+              onPress: () => router.replace('/'),
+            },
+          ]
         );
         return;
       }
 
-      // If approved, proceed to main app
-      router.replace('/(tabs)');
+      // Redirect to patients screen for all users
+      router.replace('/(tabs)/home');
     } catch (error) {
+      console.error('Login error:', error);
       Alert.alert('Error', error instanceof Error ? error.message : 'Failed to sign in');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleGoogleLogin = async () => {
-    setLoading(true);
-    try {
-      await signInWithGoogle();
-      router.replace('/(tabs)');
-    } catch (error) {
-      Alert.alert('Error', error instanceof Error ? error.message : 'Failed to sign in with Google');
     } finally {
       setLoading(false);
     }
@@ -168,20 +190,6 @@ export default function LoginScreen() {
             <Text style={styles.buttonText}>
               {loading ? 'Signing in...' : 'Sign In'}
             </Text>
-          </TouchableOpacity>
-
-          <View style={styles.divider}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>OR</Text>
-            <View style={styles.dividerLine} />
-          </View>
-
-          <TouchableOpacity 
-            style={styles.googleButton} 
-            onPress={handleGoogleLogin}
-            disabled={loading}
-          >
-            <Text style={styles.googleButtonText}>Continue with Google</Text>
           </TouchableOpacity>
 
           <View style={styles.registerContainer}>
@@ -287,35 +295,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: 'Inter-SemiBold',
     color: '#ffffff',
-  },
-  divider: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 24,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: '#E5E5EA',
-  },
-  dividerText: {
-    marginHorizontal: 16,
-    color: '#666666',
-    fontFamily: 'Inter-Regular',
-  },
-  googleButton: {
-    height: 48,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#E5E5EA',
-  },
-  googleButtonText: {
-    fontSize: 16,
-    fontFamily: 'Inter-SemiBold',
-    color: '#1A1A1A',
   },
   registerContainer: {
     flexDirection: 'row',

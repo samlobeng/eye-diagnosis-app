@@ -6,7 +6,7 @@ export default function Index() {
 
   // If user is authenticated, redirect to tabs
   if (user) {
-    return <Redirect href="/(tabs)" />;
+    return <Redirect href="/(tabs)/patients" />;
   }
 
   // If not authenticated, redirect to onboarding

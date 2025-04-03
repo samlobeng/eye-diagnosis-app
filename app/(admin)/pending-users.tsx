@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, Alert, Linking, Image, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, Alert, Linking, Image, ScrollView, ActivityIndicator, Platform } from 'react-native';
 import { supabase } from '../../lib/supabase';
 import { useRouter } from 'expo-router';
-import { ArrowUpRight, Check, X, Clock, CheckCircle, XCircle, Filter } from 'lucide-react-native';
+import { ArrowUpRight, Check, X, Clock, CheckCircle, XCircle, Filter, LogOut } from 'lucide-react-native';
 
 type DocumentType = 'license' | 'passport' | 'selfie';
 type UserStatus = 'all' | 'pending' | 'approved';
@@ -52,7 +52,7 @@ export default function PendingUsersScreen() {
 
       if (!adminData) {
         Alert.alert('Error', 'You do not have permission to view pending users');
-        router.replace('/(tabs)');
+        router.replace('/(tabs)/patients');
         return;
       }
 
@@ -153,7 +153,18 @@ export default function PendingUsersScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>User Management</Text>
+        <View style={styles.headerTop}>
+          <Text style={styles.title}>User Management</Text>
+          <TouchableOpacity
+            style={styles.logoutButton}
+            onPress={async () => {
+              await supabase.auth.signOut();
+              router.replace('/home');
+            }}
+          >
+            <LogOut size={24} color="#007AFF" />
+          </TouchableOpacity>
+        </View>
         <View style={styles.filterContainer}>
           <TouchableOpacity
             style={[styles.filterButton, selectedStatus === 'all' && styles.filterButtonActive]}
@@ -257,14 +268,26 @@ const styles = StyleSheet.create({
   },
   header: {
     padding: 16,
+    paddingTop: Platform.OS === 'ios' ? 60 : 40,
     borderBottomWidth: 1,
     borderBottomColor: '#E5E5EA',
+  },
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+    width: '100%',
   },
   title: {
     fontSize: 24,
     fontFamily: 'PlusJakartaSans-SemiBold',
     color: '#1A1A1A',
-    marginBottom: 16,
+  },
+  logoutButton: {
+    padding: 8,
+    backgroundColor: '#F8F9FA',
+    borderRadius: 8,
   },
   filterContainer: {
     flexDirection: 'row',
