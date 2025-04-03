@@ -1,0 +1,13 @@
+prefix=/Users/samuelobeng/Documents/Daggendorf/Sem 2/Project(AI)/Eye_Diagnosis_App/AI/model/venv
+exec_prefix=/Users/samuelobeng/Documents/Daggendorf/Sem 2/Project(AI)/Eye_Diagnosis_App/AI/model/venv
+libdir=/Users/samuelobeng/Documents/Daggendorf/Sem 2/Project(AI)/Eye_Diagnosis_App/AI/model/venv/lib
+sharedlibdir=/Users/samuelobeng/Documents/Daggendorf/Sem 2/Project(AI)/Eye_Diagnosis_App/AI/model/venv/lib
+includedir=/Users/samuelobeng/Documents/Daggendorf/Sem 2/Project(AI)/Eye_Diagnosis_App/AI/model/venv/include
+
+Name: zlib
+Description: zlib compression library
+Version: 1.2.13
+
+Requires:
+Libs: -L${libdir} -L${sharedlibdir} -lz
+Cflags: -I${includedir}

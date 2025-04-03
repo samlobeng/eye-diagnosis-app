@@ -77,10 +77,7 @@ export default function LoginScreen() {
         Alert.alert(
           'Account Not Approved',
           'Your account is pending approval. Please wait for an administrator to approve your account.',
-          [{ 
-            text: 'OK', 
-            onPress: () => router.replace('/home') 
-          }]
+          [{ text: 'OK' }]
         );
         return;
       }
@@ -179,13 +176,13 @@ export default function LoginScreen() {
             <View style={styles.dividerLine} />
           </View>
 
-          {/* <TouchableOpacity 
+          <TouchableOpacity 
             style={styles.googleButton} 
             onPress={handleGoogleLogin}
             disabled={loading}
           >
             <Text style={styles.googleButtonText}>Continue with Google</Text>
-          </TouchableOpacity> */}
+          </TouchableOpacity>
 
           <View style={styles.registerContainer}>
             <Text style={styles.registerText}>Don't have an account? </Text>

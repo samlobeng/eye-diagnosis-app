@@ -259,14 +259,12 @@ const styles = StyleSheet.create({
     padding: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#E5E5EA',
-
   },
   title: {
     fontSize: 24,
     fontFamily: 'PlusJakartaSans-SemiBold',
     color: '#1A1A1A',
     marginBottom: 16,
-    marginTop: 50,
   },
   filterContainer: {
     flexDirection: 'row',
