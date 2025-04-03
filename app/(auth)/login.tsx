@@ -27,17 +27,20 @@ export default function LoginScreen() {
 
     setLoading(true);
     try {
-      await signIn(email, password);
-      
-      // Get current user
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError || !user) throw userError;
+      // Sign in and get session
+      const { data: { session }, error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (signInError) throw signInError;
+      if (!session) throw new Error('No session after sign in');
 
       // Check if user is admin by querying admin_profiles directly
       const { data: adminData, error: adminError } = await supabase
         .from('admin_profiles')
         .select('id')
-        .eq('id', user.id)
+        .eq('id', session.user.id)
         .single();
 
       if (adminError && adminError.code !== 'PGRST116') { // PGRST116 is "no rows returned"
@@ -45,12 +48,45 @@ export default function LoginScreen() {
         throw adminError;
       }
 
-      // Redirect based on admin status
+      // If user is admin, allow login and redirect to admin screen
       if (adminData) {
         router.replace('/pending-users');
-      } else {
-        router.replace('/(tabs)');
+        return;
       }
+
+      // For regular users, check their verification status
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('verification_status')
+        .eq('id', session.user.id)
+        .single();
+
+      if (profileError) {
+        console.error('Profile check error:', profileError);
+        throw profileError;
+      }
+
+      if (!profileData) {
+        throw new Error('Profile not found');
+      }
+
+      // Check verification status
+      if (profileData.verification_status !== 'approved') {
+        // Sign out the user if not approved
+        await supabase.auth.signOut();
+        Alert.alert(
+          'Account Not Approved',
+          'Your account is pending approval. Please wait for an administrator to approve your account.',
+          [{ 
+            text: 'OK', 
+            onPress: () => router.replace('/home') 
+          }]
+        );
+        return;
+      }
+
+      // If approved, proceed to main app
+      router.replace('/(tabs)');
     } catch (error) {
       Alert.alert('Error', error instanceof Error ? error.message : 'Failed to sign in');
     } finally {

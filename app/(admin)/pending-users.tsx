@@ -1,191 +1,251 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, Alert, Linking } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, Alert, Linking, Image, ScrollView, ActivityIndicator } from 'react-native';
 import { supabase } from '../../lib/supabase';
 import { useRouter } from 'expo-router';
+import { ArrowUpRight, Check, X, Clock, CheckCircle, XCircle, Filter } from 'lucide-react-native';
 
-interface PendingUser {
+type DocumentType = 'license' | 'passport' | 'selfie';
+type UserStatus = 'all' | 'pending' | 'approved';
+
+interface User {
   id: string;
   full_name: string;
   email: string;
   medical_license_number: string;
-  created_at: string;
+  verification_status: string;
   documents: {
-    license: string;
-    passport: string;
-    selfie: string;
+    license: string | null;
+    passport: string | null;
+    selfie: string | null;
   };
 }
 
 export default function PendingUsersScreen() {
-  const [pendingUsers, setPendingUsers] = useState<PendingUser[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedStatus, setSelectedStatus] = useState<UserStatus>('all');
   const router = useRouter();
 
-  useEffect(() => {
-    fetchPendingUsers();
-  }, []);
-
-  const fetchPendingUsers = async () => {
+  const fetchUsers = async () => {
     try {
-      console.log('Fetching pending users...');
-      
-      // First check if we're authenticated
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      if (sessionError) {
-        console.error('Session error:', sessionError);
-        throw sessionError;
-      }
-      console.log('Current session:', session?.user?.id);
+      setLoading(true);
+      console.log('Fetching users...');
 
-      if (!session?.user?.id) {
-        Alert.alert('Error', 'You must be logged in to view pending users');
-        return;
-      }
+      // Get current session
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) throw sessionError;
+      if (!session) throw new Error('No session found');
+
+      console.log('Current session user ID:', session.user.id);
 
       // Check if user is admin
-      const { data: isAdminData, error: isAdminError } = await supabase
-        .rpc('is_admin', { user_id: session.user.id });
-      
-      if (isAdminError) {
-        console.error('Admin check error:', isAdminError);
-        throw isAdminError;
-      }
-      console.log('Is admin:', isAdminData);
+      const { data: adminData, error: adminError } = await supabase
+        .from('admin_profiles')
+        .select('id')
+        .eq('id', session.user.id)
+        .single();
 
-      if (!isAdminData) {
+      if (adminError && adminError.code !== 'PGRST116') {
+        console.error('Admin check error:', adminError);
+        throw adminError;
+      }
+
+      if (!adminData) {
         Alert.alert('Error', 'You do not have permission to view pending users');
+        router.replace('/(tabs)');
         return;
       }
 
+      // Fetch all profiles
       const { data: profiles, error: profilesError } = await supabase
         .from('profiles')
-        .select('*')
-        .eq('verification_status', 'pending');
+        .select('*');
 
-      if (profilesError) {
-        console.error('Profiles error:', profilesError);
-        throw profilesError;
-      }
-      console.log('Found profiles:', profiles);
+      if (profilesError) throw profilesError;
+      console.log('Profiles fetched:', profiles);
 
-      if (!profiles || profiles.length === 0) {
-        console.log('No pending users found');
-        setPendingUsers([]);
-        return;
-      }
-
-      // Fetch documents for each user
+      // Fetch documents for each profile
       const usersWithDocs = await Promise.all(
         profiles.map(async (profile) => {
-          console.log('Fetching documents for profile:', profile.id);
           const { data: documents, error: docsError } = await supabase
             .from('medical_documents')
             .select('document_type, file_url')
             .eq('user_id', profile.id);
 
           if (docsError) {
-            console.error('Documents error:', docsError);
-            throw docsError;
+            console.error(`Error fetching documents for profile ${profile.id}:`, docsError);
+            return null;
           }
-          console.log('Found documents:', documents);
 
-          const docs = documents.reduce((acc, doc) => ({
-            ...acc,
-            [doc.document_type]: doc.file_url
-          }), {});
+          // Organize documents by type
+          const docs = {
+            license: documents?.find(d => d.document_type === 'license')?.file_url || null,
+            passport: documents?.find(d => d.document_type === 'passport')?.file_url || null,
+            selfie: documents?.find(d => d.document_type === 'selfie')?.file_url || null,
+          };
 
           return {
-            ...profile,
-            documents: docs
+            id: profile.id,
+            full_name: profile.full_name,
+            email: profile.email,
+            medical_license_number: profile.medical_license_number,
+            verification_status: profile.verification_status,
+            documents: docs,
           };
         })
       );
 
-      console.log('Final users with docs:', usersWithDocs);
-      setPendingUsers(usersWithDocs);
+      // Filter out any null entries and set the users
+      setUsers(usersWithDocs.filter((user): user is User => user !== null));
+      console.log('Final users list:', usersWithDocs);
     } catch (error) {
-      console.error('Error fetching pending users:', error);
-      Alert.alert(
-        'Error', 
-        error instanceof Error 
-          ? `Failed to fetch pending users: ${error.message}`
-          : 'Failed to fetch pending users'
-      );
+      console.error('Error fetching users:', error);
+      Alert.alert('Error', 'Failed to fetch users. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
+  useEffect(() => {
+    fetchUsers();
+  }, []);
+
   const handleApprove = async (userId: string) => {
     try {
       const { error } = await supabase.rpc('approve_user', { user_id: userId });
-      
       if (error) throw error;
-
+      await fetchUsers(); // Refresh the list
       Alert.alert('Success', 'User approved successfully');
-      fetchPendingUsers(); // Refresh the list
     } catch (error) {
       console.error('Error approving user:', error);
-      Alert.alert('Error', 'Failed to approve user');
+      Alert.alert('Error', 'Failed to approve user. Please try again.');
     }
   };
 
-  const renderUser = ({ item }: { item: PendingUser }) => (
-    <View style={styles.userCard}>
-      <Text style={styles.userName}>{item.full_name}</Text>
-      <Text style={styles.userEmail}>{item.email}</Text>
-      <Text style={styles.userLicense}>License: {item.medical_license_number}</Text>
-      <Text style={styles.userDate}>
-        Registered: {new Date(item.created_at).toLocaleDateString()}
-      </Text>
-      
-      <View style={styles.documentLinks}>
-        <TouchableOpacity 
-          style={styles.docButton}
-          onPress={() => Linking.openURL(item.documents.license)}
-        >
-          <Text style={styles.docButtonText}>View License</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={styles.docButton}
-          onPress={() => Linking.openURL(item.documents.passport)}
-        >
-          <Text style={styles.docButtonText}>View Passport</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={styles.docButton}
-          onPress={() => Linking.openURL(item.documents.selfie)}
-        >
-          <Text style={styles.docButtonText}>View Selfie</Text>
-        </TouchableOpacity>
-      </View>
+  const handleReject = async (userId: string) => {
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ verification_status: 'rejected' })
+        .eq('id', userId);
+      if (error) throw error;
+      await fetchUsers(); // Refresh the list
+      Alert.alert('Success', 'User rejected successfully');
+    } catch (error) {
+      console.error('Error rejecting user:', error);
+      Alert.alert('Error', 'Failed to reject user. Please try again.');
+    }
+  };
 
-      <TouchableOpacity 
-        style={styles.approveButton}
-        onPress={() => handleApprove(item.id)}
-      >
-        <Text style={styles.approveButtonText}>Approve User</Text>
-      </TouchableOpacity>
-    </View>
-  );
+  const filteredUsers = users.filter(user => {
+    if (selectedStatus === 'all') return true;
+    return user.verification_status === selectedStatus;
+  });
 
   if (loading) {
     return (
       <View style={styles.container}>
-        <Text>Loading pending users...</Text>
+        <ActivityIndicator size="large" color="#007AFF" />
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Pending User Approvals</Text>
-      <FlatList
-        data={pendingUsers}
-        renderItem={renderUser}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.list}
-      />
+      <View style={styles.header}>
+        <Text style={styles.title}>User Management</Text>
+        <View style={styles.filterContainer}>
+          <TouchableOpacity
+            style={[styles.filterButton, selectedStatus === 'all' && styles.filterButtonActive]}
+            onPress={() => setSelectedStatus('all')}
+          >
+            <Text style={[styles.filterText, selectedStatus === 'all' && styles.filterTextActive]}>All</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.filterButton, selectedStatus === 'pending' && styles.filterButtonActive]}
+            onPress={() => setSelectedStatus('pending')}
+          >
+            <Text style={[styles.filterText, selectedStatus === 'pending' && styles.filterTextActive]}>Pending</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.filterButton, selectedStatus === 'approved' && styles.filterButtonActive]}
+            onPress={() => setSelectedStatus('approved')}
+          >
+            <Text style={[styles.filterText, selectedStatus === 'approved' && styles.filterTextActive]}>Approved</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <ScrollView style={styles.scrollView}>
+        {filteredUsers.map((user) => (
+          <View key={user.id} style={styles.userCard}>
+            <View style={styles.userInfo}>
+              <Text style={styles.userName}>{user.full_name}</Text>
+              <Text style={styles.userEmail}>{user.email}</Text>
+              <Text style={styles.userLicense}>License: {user.medical_license_number}</Text>
+              <Text style={[
+                styles.statusText,
+                user.verification_status === 'approved' && styles.statusApproved,
+                user.verification_status === 'rejected' && styles.statusRejected
+              ]}>
+                Status: {user.verification_status.charAt(0).toUpperCase() + user.verification_status.slice(1)}
+              </Text>
+            </View>
+
+            <View style={styles.documentsContainer}>
+              <Text style={styles.documentsTitle}>Documents:</Text>
+              <View style={styles.documentsGrid}>
+                {user.documents.license && (
+                  <View style={styles.documentItem}>
+                    <Text style={styles.documentLabel}>License</Text>
+                    <Image
+                      source={{ uri: user.documents.license }}
+                      style={styles.documentImage}
+                    />
+                  </View>
+                )}
+                {user.documents.passport && (
+                  <View style={styles.documentItem}>
+                    <Text style={styles.documentLabel}>Passport</Text>
+                    <Image
+                      source={{ uri: user.documents.passport }}
+                      style={styles.documentImage}
+                    />
+                  </View>
+                )}
+                {user.documents.selfie && (
+                  <View style={styles.documentItem}>
+                    <Text style={styles.documentLabel}>Selfie</Text>
+                    <Image
+                      source={{ uri: user.documents.selfie }}
+                      style={styles.documentImage}
+                    />
+                  </View>
+                )}
+              </View>
+            </View>
+
+            {user.verification_status === 'pending' && (
+              <View style={styles.actionButtons}>
+                <TouchableOpacity
+                  style={[styles.actionButton, styles.approveButton]}
+                  onPress={() => handleApprove(user.id)}
+                >
+                  <CheckCircle size={20} color="#ffffff" />
+                  <Text style={styles.actionButtonText}>Approve</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.actionButton, styles.rejectButton]}
+                  onPress={() => handleReject(user.id)}
+                >
+                  <XCircle size={20} color="#ffffff" />
+                  <Text style={styles.actionButtonText}>Reject</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        ))}
+      </ScrollView>
     </View>
   );
 }
@@ -193,71 +253,131 @@ export default function PendingUsersScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#ffffff',
+  },
+  header: {
     padding: 16,
-    backgroundColor: '#f5f5f5',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E5EA',
   },
   title: {
     fontSize: 24,
-    fontWeight: 'bold',
+    fontFamily: 'PlusJakartaSans-SemiBold',
+    color: '#1A1A1A',
     marginBottom: 16,
   },
-  list: {
-    paddingBottom: 16,
+  filterContainer: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  filterButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#F8F9FA',
+  },
+  filterButtonActive: {
+    backgroundColor: '#007AFF',
+  },
+  filterText: {
+    fontSize: 14,
+    fontFamily: 'Inter-SemiBold',
+    color: '#666666',
+  },
+  filterTextActive: {
+    color: '#ffffff',
+  },
+  scrollView: {
+    flex: 1,
   },
   userCard: {
-    backgroundColor: 'white',
-    borderRadius: 8,
     padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E5EA',
+  },
+  userInfo: {
     marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
   },
   userName: {
     fontSize: 18,
-    fontWeight: 'bold',
+    fontFamily: 'PlusJakartaSans-SemiBold',
+    color: '#1A1A1A',
     marginBottom: 4,
   },
   userEmail: {
-    fontSize: 16,
-    color: '#666',
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: '#666666',
     marginBottom: 4,
   },
   userLicense: {
-    fontSize: 16,
-    color: '#666',
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: '#666666',
     marginBottom: 4,
   },
-  userDate: {
+  statusText: {
     fontSize: 14,
-    color: '#999',
-    marginBottom: 12,
+    fontFamily: 'Inter-SemiBold',
+    color: '#FF9500',
   },
-  documentLinks: {
+  statusApproved: {
+    color: '#34C759',
+  },
+  statusRejected: {
+    color: '#FF3B30',
+  },
+  documentsContainer: {
+    marginBottom: 16,
+  },
+  documentsTitle: {
+    fontSize: 16,
+    fontFamily: 'PlusJakartaSans-SemiBold',
+    color: '#1A1A1A',
+    marginBottom: 8,
+  },
+  documentsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    gap: 16,
+  },
+  documentItem: {
+    width: '45%',
+  },
+  documentLabel: {
+    fontSize: 12,
+    fontFamily: 'Inter-Regular',
+    color: '#666666',
+    marginBottom: 4,
+  },
+  documentImage: {
+    width: '100%',
+    height: 120,
+    borderRadius: 8,
+    backgroundColor: '#F8F9FA',
+  },
+  actionButtons: {
+    flexDirection: 'row',
     gap: 8,
-    marginBottom: 12,
   },
-  docButton: {
-    backgroundColor: '#e0e0e0',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 4,
-  },
-  docButtonText: {
-    color: '#333',
+  actionButton: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 8,
+    gap: 8,
   },
   approveButton: {
-    backgroundColor: '#4CAF50',
-    padding: 12,
-    borderRadius: 4,
-    alignItems: 'center',
+    backgroundColor: '#34C759',
   },
-  approveButtonText: {
-    color: 'white',
-    fontWeight: 'bold',
+  rejectButton: {
+    backgroundColor: '#FF3B30',
+  },
+  actionButtonText: {
+    fontSize: 14,
+    fontFamily: 'Inter-SemiBold',
+    color: '#ffffff',
   },
 }); 

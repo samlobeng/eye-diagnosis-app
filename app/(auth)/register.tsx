@@ -239,7 +239,7 @@ export default function RegisterScreen() {
 
     setLoading(true);
     try {
-      // First, sign up the user
+      // Sign up the user - profile will be created automatically by the trigger
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
         password,
@@ -252,57 +252,69 @@ export default function RegisterScreen() {
       });
 
       if (authError) throw authError;
+      if (!authData.user) throw new Error('No user data returned');
+      
+      const userId = authData.user.id;
 
-      // Create a profile record
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .insert({
-          id: authData.user?.id,
-          full_name: name,
-          medical_license_number: medicalLicense,
-          verification_status: 'pending',
+      // Handle document uploads
+      try {
+        // Now move the documents from temp to user's folder
+        const movePromises = Object.entries(documents).map(async ([type, url]) => {
+          if (!url) return null;
+          
+          // Extract the filename from the URL
+          const fileName = url.split('/').pop();
+          if (!fileName) return null;
+          
+          const sourcePath = `temp/${type}/${fileName}`;
+          const destPath = `${userId}/${type}/${fileName}`;
+          
+          // Copy the file using the new function
+          const { error: copyError } = await supabase.rpc('copy_file', {
+            source_bucket: 'medical-documents',
+            source_path: sourcePath,
+            dest_bucket: 'medical-documents',
+            dest_path: destPath
+          });
+
+          if (copyError) {
+            console.error(`Error copying file for ${type}:`, copyError);
+            return null;
+          }
+
+          // Delete the temporary file
+          const { error: removeError } = await supabase.storage
+            .from('medical-documents')
+            .remove([sourcePath]);
+
+          if (removeError) {
+            console.error(`Error removing temp file for ${type}:`, removeError);
+          }
+
+          // Insert the document record
+          const { error: docError } = await supabase.rpc('insert_medical_document', {
+            p_user_id: userId,
+            p_document_type: type,
+            p_file_url: url.replace(`temp/${type}/`, `${userId}/${type}/`),
+          });
+
+          if (docError) {
+            console.error(`Error inserting document record for ${type}:`, docError);
+            return null;
+          }
         });
 
-      if (profileError) throw profileError;
-
-      // Wait for a moment to ensure the session is established
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      // Verify we have a valid session
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      if (sessionError || !session) {
-        throw new Error('Failed to establish user session');
+        await Promise.all(movePromises.filter(Boolean));
+      } catch (docError) {
+        console.error('Document upload error:', docError);
+        // Don't throw here, as the profile is already created
       }
 
-      // Now move the documents from temp to user's folder
-      const movePromises = Object.entries(documents).map(async ([type, url]) => {
-        // Extract the filename from the URL
-        const fileName = url?.split('/').pop();
-        const newFileName = `${session.user.id}/${type}/${fileName}`;
-        
-        // Copy the file to the new location
-        const { error: copyError } = await supabase.storage
-          .from('medical-documents')
-          .copy(`temp/${type}/${fileName}`, newFileName);
-
-        if (copyError) throw copyError;
-
-        // Delete the temporary file
-        await supabase.storage
-          .from('medical-documents')
-          .remove([`temp/${type}/${fileName}`]);
-
-        // Insert the document record
-        return supabase.from('medical_documents').insert({
-          user_id: session.user.id,
-          document_type: type,
-          file_url: url?.replace(`temp/${type}/`, `${session.user.id}/${type}/`),
-        });
-      });
-
-      await Promise.all(movePromises);
-
-      router.replace('/(tabs)');
+      Alert.alert(
+        'Success',
+        'Registration successful! Please check your email to verify your account.',
+        [{ text: 'OK', onPress: () => router.replace('/login') }]
+      );
     } catch (error) {
       console.error('Registration error:', error);
       Alert.alert(
