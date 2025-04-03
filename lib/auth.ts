@@ -11,29 +11,65 @@ const redirectUri = makeRedirectUri({
   path: 'auth/callback',
 });
 
-export async function signInWithEmail(email: string, password: string) {
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email,
-    password,
-  });
+export async function signIn(email: string, password: string) {
+  try {
+    const { data: { user }, error: signInError } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
 
-  if (error) throw error;
-  return data;
+    if (signInError) throw signInError;
+
+    // Check if user is approved
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('verification_status')
+      .eq('id', user?.id)
+      .single();
+
+    if (profileError) throw profileError;
+
+    if (profile.verification_status !== 'approved') {
+      // Sign out the user if not approved
+      await supabase.auth.signOut();
+      throw new Error('Your account is pending approval. Please wait for administrator approval.');
+    }
+
+    return { user, error: null };
+  } catch (error) {
+    return { user: null, error };
+  }
 }
 
-export async function signUpWithEmail(email: string, password: string, fullName: string) {
-  const { data, error } = await supabase.auth.signUp({
-    email,
-    password,
-    options: {
-      data: {
-        full_name: fullName,
+export async function signUp(email: string, password: string, fullName: string) {
+  try {
+    const { data: { user }, error: signUpError } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          full_name: fullName,
+        },
       },
-    },
-  });
+    });
 
-  if (error) throw error;
-  return data;
+    if (signUpError) throw signUpError;
+
+    // Create profile with pending status
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .insert({
+        id: user?.id,
+        full_name: fullName,
+        verification_status: 'pending',
+      });
+
+    if (profileError) throw profileError;
+
+    return { user, error: null };
+  } catch (error) {
+    return { user: null, error };
+  }
 }
 
 export async function signInWithGoogle() {
@@ -53,14 +89,36 @@ export async function signInWithGoogle() {
 }
 
 export async function signOut() {
-  const { error } = await supabase.auth.signOut();
-  if (error) throw error;
+  try {
+    const { error } = await supabase.auth.signOut();
+    if (error) throw error;
+    return { error: null };
+  } catch (error) {
+    return { error };
+  }
 }
 
 export async function getCurrentUser() {
-  const { data: { user }, error } = await supabase.auth.getUser();
-  if (error) throw error;
-  return user;
+  try {
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError) throw userError;
+
+    if (user) {
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      if (profileError) throw profileError;
+
+      return { user: { ...user, ...profile }, error: null };
+    }
+
+    return { user: null, error: null };
+  } catch (error) {
+    return { user: null, error };
+  }
 }
 
 export async function getCurrentSession() {

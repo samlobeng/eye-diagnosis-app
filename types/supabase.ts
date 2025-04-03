@@ -13,18 +13,59 @@ export interface Database {
         Row: {
           id: string
           full_name: string | null
+          medical_license_number: string | null
+          verification_status: 'pending' | 'approved' | 'rejected'
+          verified_at: string | null
+          rejected_reason: string | null
           created_at: string
           updated_at: string
         }
         Insert: {
           id: string
           full_name?: string | null
+          medical_license_number?: string | null
+          verification_status?: 'pending' | 'approved' | 'rejected'
+          verified_at?: string | null
+          rejected_reason?: string | null
           created_at?: string
           updated_at?: string
         }
         Update: {
           id?: string
           full_name?: string | null
+          medical_license_number?: string | null
+          verification_status?: 'pending' | 'approved' | 'rejected'
+          verified_at?: string | null
+          rejected_reason?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      medical_documents: {
+        Row: {
+          id: string
+          user_id: string
+          document_type: 'license' | 'passport' | 'selfie'
+          file_url: string
+          status: 'pending' | 'approved' | 'rejected'
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          document_type: 'license' | 'passport' | 'selfie'
+          file_url: string
+          status?: 'pending' | 'approved' | 'rejected'
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          document_type?: 'license' | 'passport' | 'selfie'
+          file_url?: string
+          status?: 'pending' | 'approved' | 'rejected'
           created_at?: string
           updated_at?: string
         }

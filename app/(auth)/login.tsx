@@ -2,8 +2,9 @@ import { useState } from 'react';
 import { StyleSheet, View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView, Alert } from 'react-native';
 import { Eye, EyeOff, LogIn } from 'lucide-react-native';
 import { useRouter, Redirect } from 'expo-router';
-import { signInWithEmail, signInWithGoogle } from '@/lib/auth';
+import { signIn, signInWithGoogle } from '@/lib/auth';
 import { useAuth } from '@/hooks/useAuth';
+import { supabase } from '@/lib/supabase';
 
 export default function LoginScreen() {
   const { user } = useAuth();
@@ -26,8 +27,30 @@ export default function LoginScreen() {
 
     setLoading(true);
     try {
-      await signInWithEmail(email, password);
-      router.replace('/(tabs)');
+      await signIn(email, password);
+      
+      // Get current user
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) throw userError;
+
+      // Check if user is admin by querying admin_profiles directly
+      const { data: adminData, error: adminError } = await supabase
+        .from('admin_profiles')
+        .select('id')
+        .eq('id', user.id)
+        .single();
+
+      if (adminError && adminError.code !== 'PGRST116') { // PGRST116 is "no rows returned"
+        console.error('Admin check error:', adminError);
+        throw adminError;
+      }
+
+      // Redirect based on admin status
+      if (adminData) {
+        router.replace('/pending-users');
+      } else {
+        router.replace('/(tabs)');
+      }
     } catch (error) {
       Alert.alert('Error', error instanceof Error ? error.message : 'Failed to sign in');
     } finally {
