@@ -1,138 +1,104 @@
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Image, Platform } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Platform, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
-import { ArrowLeft, Eye, CircleAlert as AlertCircle } from 'lucide-react-native';
-import { useAuth } from '@/hooks/useAuth';
-import { useState, useEffect } from 'react';
+import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
-import type { Database } from '@/types/supabase';
+import { Eye, ChevronRight, Calendar, User } from 'lucide-react-native';
 
-type EyeScan = Database['public']['Tables']['eye_scans']['Row'];
+interface Scan {
+  id: string;
+  created_at: string;
+  diagnosis: string;
+  patient: {
+    full_name: string;
+  } | null;
+}
 
 export default function ScansScreen() {
+  const [scans, setScans] = useState<Scan[]>([]);
+  const [loading, setLoading] = useState(true);
   const router = useRouter();
   const { user } = useAuth();
-  const [scans, setScans] = useState<EyeScan[]>([]);
-  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!user) return;
-
-    async function fetchScans() {
-      try {
-        const { data, error } = await supabase
-          .from('eye_scans')
-          .select('*')
-          .eq('user_id', user?.id)
-          .order('created_at', { ascending: false });
-
-        if (error) throw error;
-        setScans(data || []);
-      } catch (error) {
-        console.error('Error fetching scans:', error);
-      } finally {
-        setLoading(false);
-      }
-    }
-
     fetchScans();
-  }, [user]);
+  }, []);
 
-  const getSeverityColor = (severity: string) => {
-    switch (severity) {
-      case 'normal':
-        return '#00B37E';
-      case 'warning':
-        return '#FF9500';
-      case 'critical':
-        return '#FF3B30';
-      default:
-        return '#666666';
+  const fetchScans = async () => {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('analysis_results')
+        .select(`
+          id,
+          created_at,
+          diagnosis,
+          patient:patients(full_name)
+        `)
+        .eq('doctor_id', user?.user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setScans(data?.map(scan => ({
+        ...scan,
+        patient: scan.patient?.[0] || null
+      })) || []);
+    } catch (error) {
+      console.error('Error fetching scans:', error);
+      Alert.alert('Error', 'Failed to load scan history');
+    } finally {
+      setLoading(false);
     }
   };
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#007AFF" />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity 
-          style={styles.backButton}
-          onPress={() => router.back()}
-        >
-          <ArrowLeft size={24} color="#1A1A1A" />
-        </TouchableOpacity>
+        <Eye size={24} color="#000000" />
         <Text style={styles.title}>Eye Scans</Text>
       </View>
-
       <ScrollView style={styles.content}>
-        {loading ? (
-          <View style={styles.loadingContainer}>
-            <Text style={styles.loadingText}>Loading scans...</Text>
-          </View>
-        ) : scans.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <Eye size={48} color="#666666" />
-            <Text style={styles.emptyTitle}>No Scans Yet</Text>
-            <Text style={styles.emptySubtitle}>
-              Take your first eye scan to start monitoring your eye health
-            </Text>
-            <TouchableOpacity 
-              style={styles.scanButton}
-              onPress={() => router.push('/scan')}
-            >
-              <Text style={styles.scanButtonText}>Take a Scan</Text>
-            </TouchableOpacity>
+        {scans.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyStateText}>No scans found</Text>
           </View>
         ) : (
-          scans.map((scan) => {
-            const result = scan.analysis_result as any;
-            const severity = result?.severity || 'pending';
-
-            return (
-              <TouchableOpacity 
-                key={scan.id} 
-                style={styles.scanCard}
-                onPress={() => {}}
-              >
-                <Image
-                  source={{ uri: scan.image_url }}
-                  style={styles.scanImage}
-                />
-                
-                <View style={styles.scanInfo}>
-                  <View style={styles.scanHeader}>
-                    <Text style={styles.scanDate}>
-                      {new Date(scan.created_at).toLocaleDateString()}
-                    </Text>
-                    <View style={[
-                      styles.severityBadge,
-                      { backgroundColor: `${getSeverityColor(severity)}15` }
-                    ]}>
-                      <Text style={[
-                        styles.severityText,
-                        { color: getSeverityColor(severity) }
-                      ]}>
-                        {severity.charAt(0).toUpperCase() + severity.slice(1)}
-                      </Text>
-                    </View>
-                  </View>
-
-                  {result?.conditions?.length > 0 && (
-                    <View style={styles.conditions}>
-                      {result.conditions.map((condition: string, index: number) => (
-                        <View key={index} style={styles.condition}>
-                          <AlertCircle size={16} color="#FF9500" />
-                          <Text style={styles.conditionText}>{condition}</Text>
-                        </View>
-                      ))}
-                    </View>
-                  )}
-
-                  <TouchableOpacity style={styles.viewDetails}>
-                    <Text style={styles.viewDetailsText}>View Full Report</Text>
-                  </TouchableOpacity>
+          scans.map((scan) => (
+            <TouchableOpacity
+              key={scan.id}
+              style={styles.scanCard}
+              onPress={() => router.push(`/analysis-results/${scan.id}` as any)}
+            >
+              <View style={styles.scanInfo}>
+                <View style={styles.patientInfo}>
+                  <User size={20} color="#666666" />
+                  <Text style={styles.patientName}>{scan.patient?.full_name || 'Unknown Patient'}</Text>
                 </View>
-              </TouchableOpacity>
-            );
-          })
+                <View style={styles.dateInfo}>
+                  <Calendar size={20} color="#666666" />
+                  <Text style={styles.date}>{formatDate(scan.created_at)}</Text>
+                </View>
+                <Text style={styles.diagnosis}>Diagnosis: {scan.diagnosis}</Text>
+              </View>
+              <ChevronRight size={24} color="#666666" />
+            </TouchableOpacity>
+          ))
         )}
       </ScrollView>
     </View>
@@ -142,136 +108,77 @@ export default function ScansScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8F9FA',
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 20,
-    paddingTop: Platform.OS === 'ios' ? 60 : 40,
     backgroundColor: '#ffffff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E5EA',
-  },
-  backButton: {
-    padding: 8,
-    marginRight: 12,
-    borderRadius: 8,
-    backgroundColor: '#F2F2F7',
-  },
-  title: {
-    fontSize: 24,
-    fontFamily: 'PlusJakartaSans-SemiBold',
-    color: '#1A1A1A',
-  },
-  content: {
-    flex: 1,
-    padding: 20,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
+    backgroundColor: '#ffffff',
   },
-  loadingText: {
-    fontSize: 16,
-    fontFamily: 'Inter-Regular',
-    color: '#666666',
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    paddingTop: Platform.OS === 'ios' ? 60 : 40,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E5EA',
+    gap: 12,
   },
-  emptyContainer: {
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#000000',
+  },
+  content: {
+    flex: 1,
+    padding: 16,
+  },
+  emptyState: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    marginTop: 20,
+    paddingTop: 40,
   },
-  emptyTitle: {
-    fontSize: 20,
-    fontFamily: 'Inter-SemiBold',
-    color: '#1A1A1A',
-    marginTop: 16,
-  },
-  emptySubtitle: {
+  emptyStateText: {
     fontSize: 16,
-    fontFamily: 'Inter-Regular',
     color: '#666666',
-    marginTop: 8,
-    textAlign: 'center',
-  },
-  scanButton: {
-    backgroundColor: '#007AFF',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 12,
-    marginTop: 24,
-  },
-  scanButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontFamily: 'Inter-SemiBold',
   },
   scanCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    overflow: 'hidden',
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#E5E5EA',
-  },
-  scanImage: {
-    width: '100%',
-    height: 200,
-    backgroundColor: '#F2F2F7',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F8F9FA',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
   },
   scanInfo: {
-    padding: 16,
+    flex: 1,
+    gap: 8,
   },
-  scanHeader: {
+  patientInfo: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 8,
   },
-  scanDate: {
+  patientName: {
     fontSize: 16,
-    fontFamily: 'Inter-SemiBold',
+    fontWeight: '600',
     color: '#1A1A1A',
   },
-  severityBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  severityText: {
-    fontSize: 14,
-    fontFamily: 'Inter-SemiBold',
-  },
-  conditions: {
-    marginTop: 12,
-  },
-  condition: {
+  dateInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 8,
+    gap: 8,
   },
-  conditionText: {
+  date: {
     fontSize: 14,
-    fontFamily: 'Inter-Regular',
     color: '#666666',
-    marginLeft: 8,
   },
-  viewDetails: {
-    marginTop: 16,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#E5E5EA',
-    alignItems: 'center',
-  },
-  viewDetailsText: {
-    fontSize: 16,
-    fontFamily: 'Inter-SemiBold',
-    color: '#007AFF',
+  diagnosis: {
+    fontSize: 14,
+    color: '#666666',
+    marginTop: 4,
   },
 });

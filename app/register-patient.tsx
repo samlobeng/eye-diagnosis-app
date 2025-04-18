@@ -2,28 +2,22 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, Alert, Platform } from 'react-native';
 import { supabase } from '@/lib/supabase';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { ArrowLeft } from 'lucide-react-native';
+import { ArrowLeft, Info } from 'lucide-react-native';
 
 interface Patient {
   id?: string;
   full_name: string;
-  email: string;
-  phone_number: string;
-  date_of_birth: string;
-  gender: string;
-  address: string;
-  medical_history: string;
+  record_number: string;
+  notes: string;
+  disclaimer_accepted: boolean;
 }
 
 export default function RegisterPatientScreen() {
   const [patient, setPatient] = useState<Patient>({
     full_name: '',
-    email: '',
-    phone_number: '',
-    date_of_birth: '',
-    gender: '',
-    address: '',
-    medical_history: '',
+    record_number: '',
+    notes: '',
+    disclaimer_accepted: false,
   });
   const [loading, setLoading] = useState(false);
   const { id } = useLocalSearchParams();
@@ -55,8 +49,8 @@ export default function RegisterPatientScreen() {
   };
 
   const handleSubmit = async () => {
-    if (!patient.full_name || !patient.email || !patient.phone_number || !patient.date_of_birth || !patient.gender) {
-      Alert.alert('Error', 'Please fill in all required fields');
+    if (!patient.full_name || !patient.record_number || !patient.disclaimer_accepted) {
+      Alert.alert('Error', 'Please fill in all required fields and accept the disclaimer');
       return;
     }
 
@@ -97,6 +91,14 @@ export default function RegisterPatientScreen() {
     }
   };
 
+  const showDisclaimerInfo = () => {
+    Alert.alert(
+      'Data Privacy Disclaimer',
+      'By accepting this disclaimer, you acknowledge that the patient\'s information will be stored securely and used only for medical purposes. The data will be protected according to healthcare privacy regulations.',
+      [{ text: 'OK' }]
+    );
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -121,85 +123,42 @@ export default function RegisterPatientScreen() {
         </View>
 
         <View style={styles.formGroup}>
-          <Text style={styles.label}>Email *</Text>
+          <Text style={styles.label}>Record Number *</Text>
           <TextInput
             style={styles.input}
-            value={patient.email}
-            onChangeText={(text) => setPatient({ ...patient, email: text })}
-            placeholder="Enter email"
-            keyboardType="email-address"
-            autoCapitalize="none"
+            value={patient.record_number}
+            onChangeText={(text) => setPatient({ ...patient, record_number: text })}
+            placeholder="Enter record/folder number"
           />
         </View>
 
         <View style={styles.formGroup}>
-          <Text style={styles.label}>Phone Number *</Text>
-          <TextInput
-            style={styles.input}
-            value={patient.phone_number}
-            onChangeText={(text) => setPatient({ ...patient, phone_number: text })}
-            placeholder="Enter phone number"
-            keyboardType="phone-pad"
-          />
-        </View>
-
-        <View style={styles.formGroup}>
-          <Text style={styles.label}>Date of Birth *</Text>
-          <TextInput
-            style={styles.input}
-            value={patient.date_of_birth}
-            onChangeText={(text) => setPatient({ ...patient, date_of_birth: text })}
-            placeholder="YYYY-MM-DD"
-          />
-        </View>
-
-        <View style={styles.formGroup}>
-          <Text style={styles.label}>Gender *</Text>
-          <View style={styles.genderOptions}>
-            {['Male', 'Female', 'Other'].map((option) => (
-              <TouchableOpacity
-                key={option}
-                style={[
-                  styles.genderOption,
-                  patient.gender === option && styles.genderOptionSelected,
-                ]}
-                onPress={() => setPatient({ ...patient, gender: option })}
-              >
-                <Text
-                  style={[
-                    styles.genderOptionText,
-                    patient.gender === option && styles.genderOptionTextSelected,
-                  ]}
-                >
-                  {option}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        <View style={styles.formGroup}>
-          <Text style={styles.label}>Address</Text>
+          <Text style={styles.label}>Notes</Text>
           <TextInput
             style={[styles.input, styles.textArea]}
-            value={patient.address}
-            onChangeText={(text) => setPatient({ ...patient, address: text })}
-            placeholder="Enter address"
+            value={patient.notes}
+            onChangeText={(text) => setPatient({ ...patient, notes: text })}
+            placeholder="Enter any additional notes"
             multiline
-            numberOfLines={3}
+            numberOfLines={4}
           />
         </View>
 
-        <View style={styles.formGroup}>
-          <Text style={styles.label}>Medical History</Text>
-          <TextInput
-            style={[styles.input, styles.textArea]}
-            value={patient.medical_history}
-            onChangeText={(text) => setPatient({ ...patient, medical_history: text })}
-            placeholder="Enter medical history"
-            multiline
-            numberOfLines={5}
-          />
+        <View style={styles.disclaimerContainer}>
+          <TouchableOpacity
+            style={styles.checkboxContainer}
+            onPress={() => setPatient({ ...patient, disclaimer_accepted: !patient.disclaimer_accepted })}
+          >
+            <View style={[styles.checkbox, patient.disclaimer_accepted && styles.checkboxChecked]}>
+              {patient.disclaimer_accepted && <View style={styles.checkboxInner} />}
+            </View>
+            <Text style={styles.disclaimerText}>
+              I accept the data privacy disclaimer *
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={showDisclaimerInfo} style={styles.infoButton}>
+            <Info size={20} color="#007AFF" />
+          </TouchableOpacity>
         </View>
 
         <TouchableOpacity
@@ -235,7 +194,7 @@ const styles = StyleSheet.create({
   title: {
     flex: 1,
     fontSize: 24,
-    fontFamily: 'PlusJakartaSans-SemiBold',
+    fontWeight: 'bold',
     color: '#1A1A1A',
   },
   content: {
@@ -247,8 +206,8 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 14,
-    fontFamily: 'Inter-SemiBold',
-    color: '#666666',
+    fontWeight: '600',
+    color: '#1A1A1A',
     marginBottom: 8,
   },
   input: {
@@ -257,47 +216,59 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 12,
     fontSize: 16,
-    fontFamily: 'Inter-Regular',
-    color: '#1A1A1A',
+    backgroundColor: '#F8F9FA',
   },
   textArea: {
     height: 100,
     textAlignVertical: 'top',
   },
-  genderOptions: {
+  disclaimerContainer: {
     flexDirection: 'row',
-    gap: 8,
+    alignItems: 'center',
+    marginBottom: 24,
   },
-  genderOption: {
+  checkboxContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     flex: 1,
-    padding: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#E5E5EA',
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: '#007AFF',
+    marginRight: 12,
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  genderOptionSelected: {
+  checkboxChecked: {
     backgroundColor: '#007AFF',
-    borderColor: '#007AFF',
   },
-  genderOptionText: {
-    fontSize: 16,
-    fontFamily: 'Inter-Regular',
+  checkboxInner: {
+    width: 12,
+    height: 12,
+    backgroundColor: '#ffffff',
+    borderRadius: 2,
+  },
+  disclaimerText: {
+    fontSize: 14,
     color: '#1A1A1A',
+    flex: 1,
   },
-  genderOptionTextSelected: {
-    color: '#FFFFFF',
+  infoButton: {
+    padding: 4,
   },
   submitButton: {
     backgroundColor: '#007AFF',
     padding: 16,
     borderRadius: 8,
     alignItems: 'center',
-    marginTop: 24,
+    marginBottom: Platform.OS === 'ios' ? 32 : 16,
   },
   submitButtonText: {
-    color: '#FFFFFF',
+    color: '#ffffff',
     fontSize: 16,
-    fontFamily: 'Inter-SemiBold',
+    fontWeight: 'bold',
   },
 }); 

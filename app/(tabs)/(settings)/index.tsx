@@ -1,9 +1,9 @@
+import React from 'react';
 import { StyleSheet, View, Text, ScrollView, Image, TouchableOpacity, SafeAreaView, Platform, Alert, ActivityIndicator } from 'react-native';
-import { Settings as SettingsIcon, Bell, Shield, CreditCard, CircleHelp, LogOut, Package, Eye } from 'lucide-react-native';
+import { Settings, Bell, Shield, CreditCard, CircleHelp, LogOut, Package, Eye, Lock, HelpCircle } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
-import { useAuth } from '@/hooks/useAuth';
-import { useProfile } from '@/hooks/useProfile';
-import { signOut } from '@/lib/auth';
+import { useAuth } from '@/context/AuthContext';
+import { supabase } from '@/lib/supabase';
 
 const menuItems = [
   {
@@ -19,7 +19,7 @@ const menuItems = [
     route: '/(tabs)/(settings)/scans',
   },
   {
-    icon: SettingsIcon,
+    icon: Settings,
     title: 'Account Settings',
     subtitle: 'Manage your account details',
     route: '/(tabs)/(settings)/settings',
@@ -52,23 +52,94 @@ const menuItems = [
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const { user } = useAuth();
-  const { profile, loading: profileLoading } = useProfile(user?.id);
+  const { user, signOut } = useAuth();
+  const [profile, setProfile] = React.useState<any>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [isLoggingOut, setIsLoggingOut] = React.useState(false);
+
+  React.useEffect(() => {
+    if (user?.user?.id) {
+      fetchProfile();
+    } else {
+      setLoading(false);
+    }
+  }, [user]);
+
+  const fetchProfile = async () => {
+    if (!user?.user?.id) {
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.user.id)
+        .maybeSingle();
+
+      if (error) {
+        console.error('Error fetching profile:', error);
+        setProfile(null);
+      } else {
+        setProfile(data);
+      }
+    } catch (error) {
+      console.error('Error in fetchProfile:', error);
+      setProfile(null);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleLogout = async () => {
+    if (isLoggingOut) return;
+    
     try {
+      setIsLoggingOut(true);
       await signOut();
-      router.replace('/onboarding');
+      router.replace('/(auth)/login');
     } catch (error) {
+      console.error('Error during logout:', error);
       Alert.alert('Error', 'Failed to sign out. Please try again.');
+    } finally {
+      setIsLoggingOut(false);
     }
   };
 
   const handleMenuItemPress = (route: string) => {
-    router.push(route);
+    router.push(route as any);
   };
 
-  if (profileLoading) {
+  const settingsItems = [
+    {
+      title: 'Account Settings',
+      icon: <Settings size={24} color="#007AFF" />,
+      onPress: () => router.push('/(tabs)/(settings)/settings'),
+    },
+    {
+      title: 'Eye Scans',
+      icon: <Eye size={24} color="#007AFF" />,
+      onPress: () => router.push('/(tabs)/(settings)/scans'),
+    },
+    {
+      title: 'Notifications',
+      icon: <Bell size={24} color="#007AFF" />,
+      onPress: () => router.push('/(tabs)/(settings)/notifications'),
+    },
+    {
+      title: 'Privacy',
+      icon: <Lock size={24} color="#007AFF" />,
+      onPress: () => router.push('/(tabs)/(settings)/privacy'),
+    },
+    {
+      title: 'Help & Support',
+      icon: <HelpCircle size={24} color="#007AFF" />,
+      onPress: () => router.push('/(tabs)/(settings)/help/faqs' as any),
+    },
+  ];
+
+  if (loading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#007AFF" />
@@ -80,6 +151,7 @@ export default function SettingsScreen() {
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
         <View style={styles.header}>
+          <Settings size={24} color="#000000" />
           <Text style={styles.title}>Settings</Text>
         </View>
 
@@ -91,14 +163,14 @@ export default function SettingsScreen() {
           <View style={styles.profileSection}>
             <Image
               source={{ 
-                uri: user?.user_metadata?.avatar_url || 
+                uri: user?.user.user_metadata?.avatar_url || 
                 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?q=80&w=200&h=200&auto=format&fit=crop' 
               }}
               style={styles.profileImage}
             />
             <View style={styles.profileInfo}>
               <Text style={styles.profileName}>{profile?.full_name || 'Anonymous User'}</Text>
-              <Text style={styles.profileEmail}>{user?.email}</Text>
+              <Text style={styles.profileEmail}>{user?.user.email}</Text>
             </View>
           </View>
 
@@ -120,32 +192,31 @@ export default function SettingsScreen() {
           </View>
 
           <View style={styles.menuSection}>
-            {menuItems.map((item, index) => (
+            {settingsItems.map((item, index) => (
               <TouchableOpacity 
                 key={index} 
                 style={[
                   styles.menuItem,
-                  index === menuItems.length - 1 && styles.lastMenuItem
+                  index === settingsItems.length - 1 && styles.lastMenuItem
                 ]}
-                onPress={() => handleMenuItemPress(item.route)}
+                onPress={item.onPress}
               >
                 <View style={styles.menuIcon}>
-                  <item.icon size={24} color="#1A1A1A" />
+                  {item.icon}
                 </View>
                 <View style={styles.menuText}>
                   <Text style={styles.menuTitle}>{item.title}</Text>
-                  <Text style={styles.menuSubtitle}>{item.subtitle}</Text>
                 </View>
               </TouchableOpacity>
             ))}
           </View>
 
           <TouchableOpacity 
-            style={styles.logoutButton}
+            style={[styles.logoutButton, styles.lastMenuItem]}
             onPress={handleLogout}
           >
             <LogOut size={24} color="#FF3B30" />
-            <Text style={styles.logoutText}>Log Out</Text>
+            <Text style={[styles.logoutText, styles.lastMenuItemText]}>Log Out</Text>
           </TouchableOpacity>
 
           <View style={styles.bottomSpacer} />
@@ -171,19 +242,22 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: '#ffffff',
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    paddingTop: Platform.OS === 'ios' ? 60 : 40,
     borderBottomWidth: 1,
     borderBottomColor: '#E5E5EA',
+    gap: 12,
   },
   title: {
-    fontSize: 28,
-    fontFamily: 'PlusJakartaSans-SemiBold',
-    color: '#1A1A1A',
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#000000',
   },
   content: {
     flex: 1,
+    padding: 16,
   },
   contentContainer: {
     paddingBottom: 24,
@@ -278,12 +352,6 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-SemiBold',
     color: '#1A1A1A',
   },
-  menuSubtitle: {
-    fontSize: 14,
-    fontFamily: 'Inter-Regular',
-    color: '#666666',
-    marginTop: 2,
-  },
   logoutButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -301,6 +369,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: 'Inter-SemiBold',
     color: '#FF3B30',
+  },
+  lastMenuItemText: {
+    marginLeft: 16,
   },
   bottomSpacer: {
     height: 40,

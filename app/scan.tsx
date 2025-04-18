@@ -4,6 +4,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Camera, Upload, ArrowLeft } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/context/AuthContext';
 
 interface Patient {
   id: string;
@@ -17,6 +18,7 @@ interface Patient {
 export default function ScanScreen() {
   const router = useRouter();
   const { patientId } = useLocalSearchParams();
+  const { user } = useAuth();
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [imageUris, setImageUris] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -120,6 +122,7 @@ export default function ScanScreen() {
         .insert([
           {
             patient_id: selectedPatient.id,
+            doctor_id: user?.user.id, // Access user ID from the session
             image_url: imageUris[0], // For now, just save the first image
             diagnosis: 'Normal', // Placeholder diagnosis
             confidence: 0.95, // Placeholder confidence

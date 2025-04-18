@@ -1,6 +1,6 @@
 import { Tabs } from 'expo-router';
 import { Platform, View } from 'react-native';
-import { Users, Home, Stethoscope, ShoppingBag, Settings } from 'lucide-react-native';
+import { Users, Home, Book, ShoppingBag, Settings } from 'lucide-react-native';
 
 export default function TabLayout() {
   return (
@@ -30,7 +30,6 @@ export default function TabLayout() {
         tabBarActiveTintColor: '#007AFF',
         tabBarInactiveTintColor: '#8E8E93',
         tabBarLabelStyle: {
-          fontFamily: 'Inter-Regular',
           fontSize: 12,
           marginTop: 0,
           marginBottom: Platform.OS === 'ios' ? 0 : 4,
@@ -43,31 +42,39 @@ export default function TabLayout() {
         name="patients"
         options={{
           title: 'Patients',
-          tabBarIcon: ({ color, size }) => <Users size={size} color={color} />,
+          tabBarIcon: ({ color }) => <Users size={24} color={color} />,
         }}
       />
       <Tabs.Screen
-        name="doctors"
+        name="education"
         options={{
-          title: 'Doctors',
-          tabBarIcon: ({ color, size }) => <Stethoscope size={size} color={color} />,
+          title: 'Education',
+          tabBarIcon: ({ color }) => <Book size={24} color={color} />,
         }}
       />
       <Tabs.Screen
         name="home"
         options={{
-          title: 'Home',
+          title: '',
           tabBarIcon: ({ color, size }) => (
             <View style={{
               backgroundColor: '#007AFF',
-              width: 56,
-              height: 56,
-              borderRadius: 28,
+              width: 64,
+              height: 64,
+              borderRadius: 32,
               justifyContent: 'center',
               alignItems: 'center',
               marginBottom: Platform.OS === 'ios' ? 20 : 0,
+              shadowColor: '#007AFF',
+              shadowOffset: {
+                width: 0,
+                height: 4,
+              },
+              shadowOpacity: 0.3,
+              shadowRadius: 8,
+              elevation: 8,
             }}>
-              <Home size={size} color="#ffffff" />
+              <Home size={28} color="#ffffff" />
             </View>
           ),
         }}
@@ -76,14 +83,14 @@ export default function TabLayout() {
         name="store"
         options={{
           title: 'Store',
-          tabBarIcon: ({ color, size }) => <ShoppingBag size={size} color={color} />,
+          tabBarIcon: ({ color }) => <ShoppingBag size={24} color={color} />,
         }}
       />
       <Tabs.Screen
         name="(settings)"
         options={{
           title: 'Settings',
-          tabBarIcon: ({ color, size }) => <Settings size={size} color={color} />,
+          tabBarIcon: ({ color }) => <Settings size={24} color={color} />,
         }}
       />
     </Tabs>

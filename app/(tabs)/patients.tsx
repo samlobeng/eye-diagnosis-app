@@ -7,18 +7,17 @@ import {
   ScrollView,
   Platform,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { UserPlus, Eye, FileText } from 'lucide-react-native';
 import { supabase } from '@/lib/supabase';
 
 interface Patient {
   id: string;
   full_name: string;
-  email: string;
-  phone_number: string;
-  date_of_birth: string;
-  gender: string;
+  record_number: string;
+  notes: string;
 }
 
 export default function PatientsScreen() {
@@ -26,15 +25,12 @@ export default function PatientsScreen() {
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
-  useEffect(() => {
-    fetchPatients();
-  }, []);
-
   const fetchPatients = async () => {
     try {
+      setLoading(true);
       const { data, error } = await supabase
         .from('patients')
-        .select('id, full_name, email, phone_number, date_of_birth, gender')
+        .select('id, full_name, record_number, notes')
         .order('full_name');
 
       if (error) throw error;
@@ -46,6 +42,13 @@ export default function PatientsScreen() {
       setLoading(false);
     }
   };
+
+  // Fetch patients when screen comes into focus
+  useFocusEffect(
+    React.useCallback(() => {
+      fetchPatients();
+    }, [])
+  );
 
   const handlePatientPress = (patient: Patient) => {
     Alert.alert(
@@ -90,45 +93,53 @@ export default function PatientsScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.content}>
-        {patients.map((patient) => (
-          <TouchableOpacity
-            key={patient.id}
-            style={styles.patientCard}
-            onPress={() => handlePatientPress(patient)}
-          >
-            <View style={styles.patientInfo}>
-              <Text style={styles.patientName}>{patient.full_name}</Text>
-              <Text style={styles.patientDetails}>
-                {patient.gender} • {new Date(patient.date_of_birth).toLocaleDateString()}
-              </Text>
-              <Text style={styles.patientContact}>
-                {patient.email} • {patient.phone_number}
-              </Text>
-            </View>
-            <View style={styles.actionButtons}>
-              <TouchableOpacity
-                style={styles.actionButton}
-                onPress={() => router.push({
-                  pathname: '/scan',
-                  params: { patientId: patient.id },
-                })}
-              >
-                <Eye size={20} color="#007AFF" />
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.actionButton}
-                onPress={() => router.push({
-                  pathname: '/analysis-results',
-                  params: { patientId: patient.id },
-                })}
-              >
-                <FileText size={20} color="#007AFF" />
-              </TouchableOpacity>
-            </View>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#007AFF" />
+        </View>
+      ) : (
+        <ScrollView style={styles.content}>
+          {patients.map((patient) => (
+            <TouchableOpacity
+              key={patient.id}
+              style={styles.patientCard}
+              onPress={() => handlePatientPress(patient)}
+            >
+              <View style={styles.patientInfo}>
+                <Text style={styles.patientName}>{patient.full_name}</Text>
+                <Text style={styles.patientDetails}>
+                  Record #: {patient.record_number}
+                </Text>
+                {patient.notes && (
+                  <Text style={styles.patientNotes} numberOfLines={2}>
+                    {patient.notes}
+                  </Text>
+                )}
+              </View>
+              <View style={styles.actionButtons}>
+                <TouchableOpacity
+                  style={styles.actionButton}
+                  onPress={() => router.push({
+                    pathname: '/scan',
+                    params: { patientId: patient.id },
+                  })}
+                >
+                  <Eye size={20} color="#007AFF" />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.actionButton}
+                  onPress={() => router.push({
+                    pathname: '/analysis-results',
+                    params: { patientId: patient.id },
+                  })}
+                >
+                  <FileText size={20} color="#007AFF" />
+                </TouchableOpacity>
+              </View>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      )}
     </View>
   );
 }
@@ -149,11 +160,16 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 24,
-    fontFamily: 'PlusJakartaSans-SemiBold',
+    fontWeight: 'bold',
     color: '#1A1A1A',
   },
   addButton: {
     padding: 8,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   content: {
     flex: 1,
@@ -173,20 +189,19 @@ const styles = StyleSheet.create({
   },
   patientName: {
     fontSize: 18,
-    fontFamily: 'PlusJakartaSans-SemiBold',
+    fontWeight: 'bold',
     color: '#1A1A1A',
     marginBottom: 4,
   },
   patientDetails: {
     fontSize: 14,
-    fontFamily: 'Inter-Regular',
     color: '#666666',
     marginBottom: 4,
   },
-  patientContact: {
+  patientNotes: {
     fontSize: 14,
-    fontFamily: 'Inter-Regular',
     color: '#666666',
+    fontStyle: 'italic',
   },
   actionButtons: {
     flexDirection: 'row',

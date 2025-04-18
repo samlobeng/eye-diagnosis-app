@@ -1,22 +1,15 @@
 import { useState } from 'react';
 import { StyleSheet, View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView, Alert } from 'react-native';
 import { Eye, EyeOff, LogIn } from 'lucide-react-native';
-import { useRouter, Redirect } from 'expo-router';
-import { useAuth } from '@/hooks/useAuth';
-import { supabase } from '@/lib/supabase';
+import { Link, router } from 'expo-router';
+import { useAuth } from '@/context/AuthContext';
 
 export default function LoginScreen() {
-  const { user } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
-
-  // If user is already authenticated, redirect to tabs
-  if (user) {
-    return <Redirect href="/(tabs)/home" />;
-  }
+  const { signIn } = useAuth();
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -24,102 +17,16 @@ export default function LoginScreen() {
       return;
     }
 
-    setLoading(true);
     try {
-      // First attempt to sign in to get the user ID
-      console.log('Attempting to sign in...');
-      const { data: { session }, error: signInError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (signInError) {
-        console.error('Sign in error:', signInError);
-        Alert.alert('Error', 'Invalid email or password');
-        return;
-      }
-
-      if (!session) {
-        throw new Error('No session after sign in');
-      }
-
-      console.log('User signed in successfully. User ID:', session.user.id);
-
-      // Now check the verification status using a direct query
-      console.log('Checking user verification status...');
-      const { data: profileData, error: profileError } = await supabase
-        .from('profiles')
-        .select('id, verification_status, is_admin')
-        .eq('id', session.user.id)
-        .single();
-
-      if (profileError) {
-        console.error('Profile check error:', profileError);
-        // If profile doesn't exist, create it
-        if (profileError.code === 'PGRST116') {
-          console.log('Profile not found, creating new profile...');
-          const { error: insertError } = await supabase
-            .from('profiles')
-            .insert([
-              {
-                id: session.user.id,
-                verification_status: 'pending',
-                is_admin: false
-              }
-            ]);
-
-          if (insertError) {
-            console.error('Profile creation error:', insertError);
-            throw insertError;
-          }
-
-          // After creating profile, show pending approval message
-          await supabase.auth.signOut();
-          Alert.alert(
-            'Account Pending',
-            'Your account is pending approval. Please wait for admin verification.',
-            [
-              {
-                text: 'OK',
-                onPress: () => router.replace('/'),
-              },
-            ]
-          );
-          return;
-        }
-        throw profileError;
-      }
-
-      if (!profileData) {
-        Alert.alert('Error', 'Profile not found');
-        return;
-      }
-
-      console.log('User verification status:', profileData.verification_status);
-
-      // If user is not approved, prevent access
-      if (profileData.verification_status !== 'approved') {
-        console.log('User not approved, signing out and showing alert...');
-        await supabase.auth.signOut();
-        
-        Alert.alert(
-          'Account Pending',
-          'Your account is pending approval. Please wait for admin verification.',
-          [
-            {
-              text: 'OK',
-              onPress: () => router.replace('/'),
-            },
-          ]
-        );
-        return;
-      }
-
-      // Redirect to patients screen for all users
+      setLoading(true);
+      await signIn({ email, password });
       router.replace('/(tabs)/home');
     } catch (error) {
-      console.error('Login error:', error);
-      Alert.alert('Error', error instanceof Error ? error.message : 'Failed to sign in');
+      if (error instanceof Error) {
+        Alert.alert('Error', error.message);
+      } else {
+        Alert.alert('Error', 'An unexpected error occurred');
+      }
     } finally {
       setLoading(false);
     }
@@ -192,11 +99,13 @@ export default function LoginScreen() {
             </Text>
           </TouchableOpacity>
 
-          <View style={styles.registerContainer}>
-            <Text style={styles.registerText}>Don't have an account? </Text>
-            <TouchableOpacity onPress={() => router.push('/register')}>
-              <Text style={styles.registerLink}>Sign Up</Text>
-            </TouchableOpacity>
+          <View style={styles.footer}>
+            <Text style={styles.footerText}>Don't have an account? </Text>
+            <Link href="/register" asChild>
+              <TouchableOpacity>
+                <Text style={styles.footerLink}>Sign Up</Text>
+              </TouchableOpacity>
+            </Link>
           </View>
         </View>
       </ScrollView>
@@ -296,17 +205,17 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-SemiBold',
     color: '#ffffff',
   },
-  registerContainer: {
+  footer: {
     flexDirection: 'row',
     justifyContent: 'center',
     marginTop: 24,
   },
-  registerText: {
+  footerText: {
     fontSize: 14,
     fontFamily: 'Inter-Regular',
     color: '#666666',
   },
-  registerLink: {
+  footerLink: {
     fontSize: 14,
     fontFamily: 'Inter-SemiBold',
     color: '#007AFF',

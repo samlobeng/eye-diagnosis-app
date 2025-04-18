@@ -7,12 +7,8 @@ import { ArrowLeft, Edit2 } from 'lucide-react-native';
 interface Patient {
   id: string;
   full_name: string;
-  email: string;
-  phone_number: string;
-  date_of_birth: string;
-  gender: string;
-  address: string;
-  medical_history: string;
+  record_number: string;
+  notes: string;
   created_at: string;
 }
 
@@ -31,7 +27,7 @@ export default function PatientDetailsScreen() {
       setLoading(true);
       const { data, error } = await supabase
         .from('patients')
-        .select('*')
+        .select('id, full_name, record_number, notes, created_at')
         .eq('id', id)
         .single();
 
@@ -87,34 +83,24 @@ export default function PatientDetailsScreen() {
             <Text style={styles.value}>{patient.full_name}</Text>
           </View>
           <View style={styles.infoGroup}>
-            <Text style={styles.label}>Email</Text>
-            <Text style={styles.value}>{patient.email}</Text>
-          </View>
-          <View style={styles.infoGroup}>
-            <Text style={styles.label}>Phone Number</Text>
-            <Text style={styles.value}>{patient.phone_number}</Text>
-          </View>
-          <View style={styles.infoGroup}>
-            <Text style={styles.label}>Date of Birth</Text>
-            <Text style={styles.value}>{patient.date_of_birth}</Text>
-          </View>
-          <View style={styles.infoGroup}>
-            <Text style={styles.label}>Gender</Text>
-            <Text style={styles.value}>{patient.gender}</Text>
+            <Text style={styles.label}>Record Number</Text>
+            <Text style={styles.value}>{patient.record_number}</Text>
           </View>
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Address</Text>
+          <Text style={styles.sectionTitle}>Notes</Text>
           <View style={styles.infoGroup}>
-            <Text style={styles.value}>{patient.address}</Text>
+            <Text style={styles.value}>{patient.notes || 'No notes available'}</Text>
           </View>
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Medical History</Text>
+          <Text style={styles.sectionTitle}>Registration Date</Text>
           <View style={styles.infoGroup}>
-            <Text style={styles.value}>{patient.medical_history}</Text>
+            <Text style={styles.value}>
+              {new Date(patient.created_at).toLocaleDateString()}
+            </Text>
           </View>
         </View>
       </ScrollView>
@@ -141,7 +127,7 @@ const styles = StyleSheet.create({
   title: {
     flex: 1,
     fontSize: 24,
-    fontFamily: 'PlusJakartaSans-SemiBold',
+    fontWeight: 'bold',
     color: '#1A1A1A',
   },
   editButton: {
@@ -156,7 +142,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 18,
-    fontFamily: 'PlusJakartaSans-SemiBold',
+    fontWeight: 'bold',
     color: '#1A1A1A',
     marginBottom: 16,
   },
@@ -165,13 +151,12 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 14,
-    fontFamily: 'Inter-SemiBold',
+    fontWeight: '600',
     color: '#666666',
     marginBottom: 4,
   },
   value: {
     fontSize: 16,
-    fontFamily: 'Inter-Regular',
     color: '#1A1A1A',
   },
 }); 

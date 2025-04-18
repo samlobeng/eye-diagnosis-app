@@ -1,228 +1,29 @@
 import { useState } from 'react';
-import { StyleSheet, View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView, Alert, Image, Linking } from 'react-native';
-import { Eye, EyeOff, ArrowLeft, UserPlus, Upload, Camera } from 'lucide-react-native';
+import { StyleSheet, View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView, Alert } from 'react-native';
+import { Eye, EyeOff, ArrowLeft, UserPlus } from 'lucide-react-native';
 import { useRouter, Redirect } from 'expo-router';
 import { signInWithGoogle } from '@/lib/auth';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
-import * as ImagePicker from 'expo-image-picker';
-import * as DocumentPicker from 'expo-document-picker';
-import { decode } from 'base64-arraybuffer';
-
-type DocumentType = 'license' | 'passport' | 'selfie';
 
 export default function RegisterScreen() {
   const { user } = useAuth();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [medicalLicense, setMedicalLicense] = useState('');
+  const [hospitalName, setHospitalName] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [documents, setDocuments] = useState<Record<DocumentType, string | null>>({
-    license: null,
-    passport: null,
-    selfie: null,
-  });
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
   const router = useRouter();
 
   // If user is already authenticated, redirect to tabs
   if (user) {
-    return <Redirect href="/(tabs)" />;
+    return <Redirect href="/home" />;
   }
 
-  const handleDocumentUpload = async (type: DocumentType) => {
-    try {
-      if (type === 'selfie') {
-        const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
-        
-        if (!permissionResult.granted) {
-          Alert.alert('Permission Required', 'Please allow access to your camera to take a selfie.');
-          return;
-        }
-
-        const result = await ImagePicker.launchCameraAsync({
-          mediaTypes: 'images',
-          allowsEditing: true,
-          aspect: [1, 1],
-          quality: 0.8,
-          base64: true,
-        });
-
-        if (!result.canceled && result.assets[0].base64) {
-          await uploadDocument(type, result.assets[0].base64, 'image/jpeg');
-        }
-      } else {
-        Alert.alert(
-          'Select Document',
-          'How would you like to upload your document?',
-          [
-            {
-              text: 'Choose from Library',
-              onPress: async () => {
-                const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-                
-                if (!permissionResult.granted) {
-                  Alert.alert('Permission Required', 'Please allow access to your photo library to upload documents.');
-                  return;
-                }
-
-                const result = await ImagePicker.launchImageLibraryAsync({
-                  mediaTypes: 'images',
-                  allowsEditing: true,
-                  aspect: [4, 3],
-                  quality: 0.8,
-                  base64: true,
-                });
-
-                if (!result.canceled && result.assets[0].base64) {
-                  await uploadDocument(type, result.assets[0].base64, 'image/jpeg');
-                }
-              }
-            },
-            {
-              text: 'Take Photo',
-              onPress: async () => {
-                const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
-                
-                if (!permissionResult.granted) {
-                  Alert.alert('Permission Required', 'Please allow access to your camera to take a photo.');
-                  return;
-                }
-
-                const result = await ImagePicker.launchCameraAsync({
-                  mediaTypes: 'images',
-                  allowsEditing: true,
-                  aspect: [4, 3],
-                  quality: 0.8,
-                  base64: true,
-                });
-
-                if (!result.canceled && result.assets[0].base64) {
-                  await uploadDocument(type, result.assets[0].base64, 'image/jpeg');
-                }
-              }
-            },
-            {
-              text: 'Choose from File System',
-              onPress: async () => {
-                try {
-                  const result = await DocumentPicker.getDocumentAsync({
-                    type: ['image/*', 'application/pdf'],
-                    copyToCacheDirectory: true,
-                  });
-
-                  if (result.assets && result.assets[0]) {
-                    const asset = result.assets[0];
-                    const response = await fetch(asset.uri);
-                    const blob = await response.blob();
-                    const reader = new FileReader();
-                    
-                    reader.onload = async () => {
-                      const base64Data = reader.result as string;
-                      // Remove the data URL prefix
-                      const base64Content = base64Data.split(',')[1];
-                      // Determine content type based on file extension
-                      const contentType = asset.mimeType || 'application/pdf';
-                      await uploadDocument(type, base64Content, contentType);
-                    };
-                    
-                    reader.readAsDataURL(blob);
-                  }
-                } catch (error) {
-                  console.error('File picker error:', error);
-                  Alert.alert('Error', 'Failed to pick file. Please try again.');
-                }
-              }
-            },
-            {
-              text: 'Cancel',
-              style: 'cancel'
-            }
-          ]
-        );
-      }
-    } catch (error) {
-      Alert.alert('Error', 'Failed to upload document. Please try again.');
-    }
-  };
-
-  const uploadDocument = async (type: DocumentType, base64Data: string, contentType: string) => {
-    setLoading(true);
-    try {
-      // Generate a unique filename using timestamp and type
-      const timestamp = Date.now();
-      const fileExtension = contentType === 'application/pdf' ? 'pdf' : 'jpg';
-      const fileName = `temp/${type}/${timestamp}.${fileExtension}`;
-      const fileData = decode(base64Data);
-
-      // Upload the file directly
-      const { data, error: uploadError } = await supabase.storage
-        .from('medical-documents')
-        .upload(fileName, fileData, {
-          contentType: contentType,
-          upsert: true,
-          cacheControl: '3600',
-        });
-
-      if (uploadError) {
-        console.error('Upload error details:', {
-          message: uploadError.message,
-          name: uploadError.name
-        });
-        
-        if (uploadError.message.includes('not found')) {
-          Alert.alert(
-            'Error',
-            'Storage bucket not found. Please contact support to set up the required storage bucket.',
-            [
-              {
-                text: 'OK',
-                onPress: () => {
-                  Linking.openURL('mailto:support@example.com');
-                }
-              }
-            ]
-          );
-        } else if (uploadError.message.includes('duplicate')) {
-          Alert.alert('Error', 'A file with this name already exists. Please try again.');
-        } else {
-          Alert.alert('Error', `Upload failed: ${uploadError.message}`);
-        }
-        return;
-      }
-
-      // Get the public URL
-      const { data: { publicUrl } } = supabase.storage
-        .from('medical-documents')
-        .getPublicUrl(fileName);
-
-      if (!publicUrl) {
-        throw new Error('Failed to get public URL for uploaded file');
-      }
-
-      // Update the documents state
-      setDocuments(prev => ({
-        ...prev,
-        [type]: publicUrl,
-      }));
-
-      Alert.alert('Success', `${type.charAt(0).toUpperCase() + type.slice(1)} uploaded successfully`);
-    } catch (error) {
-      console.error('Upload error:', error);
-      Alert.alert(
-        'Error',
-        error instanceof Error 
-          ? `Failed to upload document: ${error.message}`
-          : 'Failed to upload document. Please try again.'
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleRegister = async () => {
-    if (!name || !email || !password || !medicalLicense) {
+    if (!name || !email || !password || !hospitalName) {
       Alert.alert('Error', 'Please fill in all fields');
       return;
     }
@@ -232,8 +33,8 @@ export default function RegisterScreen() {
       return;
     }
 
-    if (!documents.license || !documents.passport || !documents.selfie) {
-      Alert.alert('Error', 'Please upload all required documents');
+    if (!acceptedTerms) {
+      Alert.alert('Error', 'Please accept the terms and conditions');
       return;
     }
 
@@ -246,69 +47,13 @@ export default function RegisterScreen() {
         options: {
           data: {
             full_name: name,
-            medical_license_number: medicalLicense,
+            hospital_name: hospitalName,
           },
         },
       });
 
       if (authError) throw authError;
       if (!authData.user) throw new Error('No user data returned');
-      
-      const userId = authData.user.id;
-
-      // Handle document uploads
-      try {
-        // Now move the documents from temp to user's folder
-        const movePromises = Object.entries(documents).map(async ([type, url]) => {
-          if (!url) return null;
-          
-          // Extract the filename from the URL
-          const fileName = url.split('/').pop();
-          if (!fileName) return null;
-          
-          const sourcePath = `temp/${type}/${fileName}`;
-          const destPath = `${userId}/${type}/${fileName}`;
-          
-          // Copy the file using the new function
-          const { error: copyError } = await supabase.rpc('copy_file', {
-            source_bucket: 'medical-documents',
-            source_path: sourcePath,
-            dest_bucket: 'medical-documents',
-            dest_path: destPath
-          });
-
-          if (copyError) {
-            console.error(`Error copying file for ${type}:`, copyError);
-            return null;
-          }
-
-          // Delete the temporary file
-          const { error: removeError } = await supabase.storage
-            .from('medical-documents')
-            .remove([sourcePath]);
-
-          if (removeError) {
-            console.error(`Error removing temp file for ${type}:`, removeError);
-          }
-
-          // Insert the document record
-          const { error: docError } = await supabase.rpc('insert_medical_document', {
-            p_user_id: userId,
-            p_document_type: type,
-            p_file_url: url.replace(`temp/${type}/`, `${userId}/${type}/`),
-          });
-
-          if (docError) {
-            console.error(`Error inserting document record for ${type}:`, docError);
-            return null;
-          }
-        });
-
-        await Promise.all(movePromises.filter(Boolean));
-      } catch (docError) {
-        console.error('Document upload error:', docError);
-        // Don't throw here, as the profile is already created
-      }
 
       Alert.alert(
         'Success',
@@ -332,7 +77,7 @@ export default function RegisterScreen() {
     setLoading(true);
     try {
       await signInWithGoogle();
-      router.replace('/(tabs)');
+      router.replace('/home');
     } catch (error) {
       Alert.alert('Error', error instanceof Error ? error.message : 'Failed to sign up with Google');
     } finally {
@@ -388,12 +133,12 @@ export default function RegisterScreen() {
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Medical License Number</Text>
+            <Text style={styles.label}>Hospital Name</Text>
             <TextInput
               style={styles.input}
-              placeholder="Enter your medical license number"
-              value={medicalLicense}
-              onChangeText={setMedicalLicense}
+              placeholder="Enter your hospital name"
+              value={hospitalName}
+              onChangeText={setHospitalName}
               editable={!loading}
             />
           </View>
@@ -403,7 +148,7 @@ export default function RegisterScreen() {
             <View style={styles.passwordContainer}>
               <TextInput
                 style={styles.passwordInput}
-                placeholder="Create a password"
+                placeholder="Enter your password"
                 secureTextEntry={!showPassword}
                 value={password}
                 onChangeText={setPassword}
@@ -420,76 +165,25 @@ export default function RegisterScreen() {
                 )}
               </TouchableOpacity>
             </View>
-            <Text style={styles.passwordHint}>
-              Password must be at least 8 characters
-            </Text>
+            <Text style={styles.passwordHint}>Password must be at least 8 characters</Text>
           </View>
 
-          <View style={styles.documentsSection}>
-            <Text style={styles.sectionTitle}>Required Documents</Text>
-            
-            <View style={styles.documentGroup}>
-              <Text style={styles.label}>Medical License</Text>
-              <TouchableOpacity
-                style={styles.documentButton}
-                onPress={() => handleDocumentUpload('license')}
-                disabled={loading}
-              >
-                {documents.license ? (
-                  <Image
-                    source={{ uri: documents.license }}
-                    style={styles.documentPreview}
-                  />
-                ) : (
-                  <View style={styles.documentPlaceholder}>
-                    <Upload size={24} color="#666666" />
-                    <Text style={styles.documentPlaceholderText}>Upload License</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.documentGroup}>
-              <Text style={styles.label}>Passport</Text>
-              <TouchableOpacity
-                style={styles.documentButton}
-                onPress={() => handleDocumentUpload('passport')}
-                disabled={loading}
-              >
-                {documents.passport ? (
-                  <Image
-                    source={{ uri: documents.passport }}
-                    style={styles.documentPreview}
-                  />
-                ) : (
-                  <View style={styles.documentPlaceholder}>
-                    <Upload size={24} color="#666666" />
-                    <Text style={styles.documentPlaceholderText}>Upload Passport</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.documentGroup}>
-              <Text style={styles.label}>Selfie</Text>
-              <TouchableOpacity
-                style={styles.documentButton}
-                onPress={() => handleDocumentUpload('selfie')}
-                disabled={loading}
-              >
-                {documents.selfie ? (
-                  <Image
-                    source={{ uri: documents.selfie }}
-                    style={styles.documentPreview}
-                  />
-                ) : (
-                  <View style={styles.documentPlaceholder}>
-                    <Camera size={24} color="#666666" />
-                    <Text style={styles.documentPlaceholderText}>Take Selfie</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            </View>
+          <View style={styles.termsContainer}>
+            <TouchableOpacity
+              style={styles.checkbox}
+              onPress={() => setAcceptedTerms(!acceptedTerms)}
+            >
+              <View style={[styles.checkboxInner, acceptedTerms && styles.checkboxChecked]} />
+            </TouchableOpacity>
+            <Text style={styles.termsText}>
+              I confirm that I am a licensed physician and agree to the{' '}
+              <Text style={styles.termsLink} onPress={() => Alert.alert(
+                'Terms and Conditions',
+                'This application is intended for use by licensed physicians only. By using this application, you confirm that you are a licensed medical professional and agree to use this application in accordance with all applicable laws and regulations. You are responsible for maintaining the confidentiality of patient information and ensuring that all medical advice and diagnoses provided through this application meet professional standards.'
+              )}>
+                Terms and Conditions
+              </Text>
+            </Text>
           </View>
 
           <TouchableOpacity 
@@ -609,41 +303,40 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Regular',
     color: '#666666',
   },
-  documentsSection: {
-    gap: 16,
+  termsContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    marginTop: 8,
   },
-  sectionTitle: {
-    fontSize: 18,
-    fontFamily: 'PlusJakartaSans-SemiBold',
-    color: '#1A1A1A',
-    marginBottom: 8,
-  },
-  documentGroup: {
-    gap: 8,
-  },
-  documentButton: {
-    height: 120,
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 4,
     borderWidth: 1,
     borderColor: '#E5E5EA',
-    borderRadius: 12,
-    backgroundColor: '#F8F9FA',
-    overflow: 'hidden',
-  },
-  documentPlaceholder: {
-    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 8,
+    marginTop: 2,
   },
-  documentPlaceholderText: {
+  checkboxInner: {
+    width: 12,
+    height: 12,
+    borderRadius: 2,
+  },
+  checkboxChecked: {
+    backgroundColor: '#007AFF',
+  },
+  termsText: {
+    flex: 1,
     fontSize: 14,
     fontFamily: 'Inter-Regular',
     color: '#666666',
+    lineHeight: 20,
   },
-  documentPreview: {
-    width: '100%',
-    height: '100%',
-    resizeMode: 'cover',
+  termsLink: {
+    color: '#007AFF',
+    fontFamily: 'Inter-SemiBold',
   },
   button: {
     backgroundColor: '#007AFF',

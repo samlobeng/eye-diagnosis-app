@@ -4,6 +4,7 @@ import { Eye, Camera, FileText, ShoppingBag } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInRight, FadeOutLeft } from 'react-native-reanimated';
 import { useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const features = [
   {
@@ -28,15 +29,17 @@ export default function OnboardingScreen() {
   const { width } = useWindowDimensions();
   const [currentStep, setCurrentStep] = useState(0);
 
-  const handleNext = () => {
+  const handleNext = async () => {
     if (currentStep < features.length - 1) {
       setCurrentStep(currentStep + 1);
     } else {
+      await AsyncStorage.setItem('hasSeenOnboarding', 'true');
       router.replace('/home');
     }
   };
 
-  const handleSkip = () => {
+  const handleSkip = async () => {
+    await AsyncStorage.setItem('hasSeenOnboarding', 'true');
     router.replace('/home');
   };
 

@@ -1,90 +1,142 @@
-import { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Modal } from 'react-native';
-import { LogOut, User, Calendar, Clock, Activity, Plus, X, ChevronRight, Filter, Trash2 } from 'lucide-react-native';
-import { useAuth } from '@/hooks/useAuth';
+import React, { useState, useEffect } from 'react';
+import { StyleSheet, View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Dimensions, Platform } from 'react-native';
+import { LogOut, User, Activity, Plus } from 'lucide-react-native';
+import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'expo-router';
-import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import { LineChart, PieChart } from 'react-native-chart-kit';
+import { useFocusEffect } from '@react-navigation/native';
 
-interface Patient {
-  id: string;
-  full_name: string;
+interface DiseaseStat {
+  name: string;
+  count: number;
+  color: string;
 }
 
-interface Appointment {
-  id: string;
-  appointment_date: string;
-  status: string;
-  patient: {
+interface Stats {
+  profile: {
     full_name: string;
-    id: string;
   } | null;
+  patientCount: number;
+  diseaseStats: DiseaseStat[];
+  monthlyStats: { month: string; count: number }[];
 }
 
 export default function HomeScreen() {
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
   const router = useRouter();
-  const [profile, setProfile] = useState<any>(null);
+  const [stats, setStats] = useState<Stats>({
+    profile: null,
+    patientCount: 0,
+    diseaseStats: [],
+    monthlyStats: []
+  });
   const [loading, setLoading] = useState(true);
-  const [patientCount, setPatientCount] = useState(0);
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [selectedDate, setSelectedDate] = useState(new Date());
-  const [showPatientModal, setShowPatientModal] = useState(false);
-  const [patients, setPatients] = useState<Patient[]>([]);
-  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
-  const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
-  const [showAppointmentModal, setShowAppointmentModal] = useState(false);
-  const [filterStatus, setFilterStatus] = useState<string>('all');
-  const [isCancelling, setIsCancelling] = useState(false);
 
-  useEffect(() => {
-    fetchProfile();
-    fetchPatientCount();
-    fetchPatients();
-    fetchAppointments();
-  }, [user]);
-
-  const fetchAppointments = async () => {
-    if (!user) return;
-    
+  const fetchData = async () => {
     try {
-      const { data, error } = await supabase
-        .from('appointments')
-        .select(`
-          id,
-          appointment_date,
-          status,
-          patient:patients!appointments_patient_id_fkey (
-            full_name
-          )
-        `)
-        .eq('doctor_id', user.id)
-        .order('appointment_date', { ascending: true })
-        .returns<Appointment[]>();
-
-      if (error) throw error;
-      setAppointments(data || []);
+      setLoading(true);
+      const [profileData, patientCountData, diseaseStatsData, monthlyStatsData] = await Promise.all([
+        fetchProfile(),
+        fetchPatientCount(),
+        fetchDiseaseStats(),
+        fetchMonthlyStats()
+      ]);
+      setStats({
+        profile: profileData || null,
+        patientCount: patientCountData || 0,
+        diseaseStats: diseaseStatsData || [],
+        monthlyStats: monthlyStatsData || []
+      });
     } catch (error) {
-      console.error('Error fetching appointments:', error);
-      Alert.alert('Error', 'Failed to fetch appointments. Please try again.');
+      console.error('Error fetching data:', error);
+      Alert.alert('Error', 'Failed to load data');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const fetchPatients = async () => {
+  useFocusEffect(
+    React.useCallback(() => {
+      fetchData();
+    }, [])
+  );
+
+  const fetchDiseaseStats = async () => {
     if (!user) return;
     
     try {
+      console.log('Fetching disease stats for doctor:', user.user.id);
       const { data, error } = await supabase
-        .from('patients')
-        .select('id, full_name')
-        .order('full_name');
+        .from('analysis_results')
+        .select('diagnosis, created_at')
+        .eq('doctor_id', user.user.id)
+        .order('created_at', { ascending: false });
 
-      if (error) throw error;
-      setPatients(data || []);
+      if (error) {
+        console.error('Error fetching disease stats:', error);
+        throw error;
+      }
+
+      console.log('Fetched disease stats:', data);
+
+      // Count occurrences of each diagnosis
+      const diagnosisCounts = data?.reduce((acc: { [key: string]: number }, item) => {
+        acc[item.diagnosis] = (acc[item.diagnosis] || 0) + 1;
+        return acc;
+      }, {});
+
+      const colors = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF'];
+      const stats = Object.entries(diagnosisCounts || {}).map(([name, count], index) => ({
+        name,
+        count,
+        color: colors[index % colors.length]
+      }));
+
+      console.log('Processed disease stats:', stats);
+      return stats;
     } catch (error) {
-      console.error('Error fetching patients:', error);
-      Alert.alert('Error', 'Failed to fetch patients. Please try again.');
+      console.error('Error in fetchDiseaseStats:', error);
+      Alert.alert('Error', 'Failed to fetch disease statistics. Please try again.');
+      return [];
+    }
+  };
+
+  const fetchMonthlyStats = async () => {
+    if (!user) return;
+    
+    try {
+      console.log('Fetching monthly stats for doctor:', user.user.id);
+      const { data, error } = await supabase
+        .from('analysis_results')
+        .select('created_at')
+        .eq('doctor_id', user.user.id)
+        .order('created_at', { ascending: true });
+
+      if (error) {
+        console.error('Error fetching monthly stats:', error);
+        throw error;
+      }
+
+      console.log('Fetched monthly stats:', data);
+
+      const monthlyData = data?.reduce((acc: { [key: string]: number }, item) => {
+        const month = new Date(item.created_at).toLocaleString('default', { month: 'short' });
+        acc[month] = (acc[month] || 0) + 1;
+        return acc;
+      }, {});
+
+      const stats = Object.entries(monthlyData || {}).map(([month, count]) => ({
+        month,
+        count
+      }));
+
+      console.log('Processed monthly stats:', stats);
+      return stats;
+    } catch (error) {
+      console.error('Error in fetchMonthlyStats:', error);
+      Alert.alert('Error', 'Failed to fetch monthly statistics. Please try again.');
+      return [];
     }
   };
 
@@ -95,15 +147,14 @@ export default function HomeScreen() {
       const { data, error } = await supabase
         .from('profiles')
         .select('full_name')
-        .eq('id', user.id)
+        .eq('id', user.user.id)
         .single();
 
       if (error) throw error;
-      setProfile(data);
+      return data;
     } catch (error) {
       console.error('Error fetching profile:', error);
-    } finally {
-      setLoading(false);
+      return null;
     }
   };
 
@@ -116,83 +167,19 @@ export default function HomeScreen() {
         .select('*', { count: 'exact', head: true });
 
       if (error) throw error;
-      setPatientCount(count || 0);
+      return count || 0;
     } catch (error) {
       console.error('Error fetching patient count:', error);
+      return 0;
     }
   };
 
   const handleLogout = async () => {
     try {
-      await supabase.auth.signOut();
+      await signOut();
       router.replace('/');
     } catch (error) {
       console.error('Error signing out:', error);
-    }
-  };
-
-  const handleScheduleAppointment = () => {
-    if (patients.length === 0) {
-      Alert.alert('No Patients', 'Please add a patient first before scheduling an appointment.');
-      return;
-    }
-    setShowPatientModal(true);
-  };
-
-  const handlePatientSelect = (patient: Patient) => {
-    setSelectedPatient(patient);
-    setShowPatientModal(false);
-    setShowDatePicker(true);
-  };
-
-  const handleDateChange = async (event: DateTimePickerEvent, selectedDate?: Date) => {
-    setShowDatePicker(false);
-    if (selectedDate && selectedPatient) {
-      setSelectedDate(selectedDate);
-      try {
-        console.log('Creating appointment with:', {
-          doctor_id: user?.id,
-          patient_id: selectedPatient.id,
-          appointment_date: selectedDate.toISOString(),
-          status: 'scheduled'
-        });
-
-        const { data, error } = await supabase
-          .from('appointments')
-          .insert([
-            {
-              doctor_id: user?.id,
-              patient_id: selectedPatient.id,
-              appointment_date: selectedDate.toISOString(),
-              status: 'scheduled'
-            }
-          ])
-          .select();
-
-        if (error) {
-          console.error('Appointment error details:', {
-            code: error.code,
-            message: error.message,
-            details: error.details,
-            hint: error.hint
-          });
-          throw error;
-        }
-
-        console.log('Appointment created successfully:', data);
-        Alert.alert('Success', 'Appointment scheduled successfully!');
-        setSelectedPatient(null);
-      } catch (error: any) {
-        console.error('Error scheduling appointment:', {
-          error,
-          message: error?.message,
-          code: error?.code
-        });
-        Alert.alert(
-          'Error',
-          error?.message || 'Failed to schedule appointment. Please try again.'
-        );
-      }
     }
   };
 
@@ -200,264 +187,121 @@ export default function HomeScreen() {
     router.push('/register-patient');
   };
 
-  const handleAppointmentPress = (appointment: Appointment) => {
-    setSelectedAppointment(appointment);
-    setShowAppointmentModal(true);
-  };
-
-  const handleCancelAppointment = async () => {
-    if (!selectedAppointment) return;
-    
-    try {
-      setIsCancelling(true);
-      const { error } = await supabase
-        .from('appointments')
-        .update({ status: 'cancelled' })
-        .eq('id', selectedAppointment.id);
-
-      if (error) throw error;
-      
-      Alert.alert('Success', 'Appointment cancelled successfully');
-      setShowAppointmentModal(false);
-      fetchAppointments(); // Refresh the list
-    } catch (error) {
-      console.error('Error cancelling appointment:', error);
-      Alert.alert('Error', 'Failed to cancel appointment. Please try again.');
-    } finally {
-      setIsCancelling(false);
-    }
-  };
-
-  const filteredAppointments = appointments.filter(appointment => {
-    if (filterStatus === 'all') return true;
-    return appointment.status === filterStatus;
-  });
-
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007AFF" />
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <View style={styles.userInfo}>
+            <View style={styles.avatar}>
+              <User size={24} color="#007AFF" />
+            </View>
+            <View>
+              <Text style={styles.welcomeText}>Loading...</Text>
+              <Text style={styles.userName}>Please wait</Text>
+            </View>
+          </View>
+          <TouchableOpacity onPress={handleLogout}>
+            <LogOut size={24} color="#FF3B30" />
+          </TouchableOpacity>
+        </View>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#007AFF" />
+        </View>
       </View>
     );
   }
 
-  const firstName = profile?.full_name?.split(' ')[0] || 'User';
+  const firstName = stats.profile?.full_name?.split(' ')[0] || 'User';
+  const screenWidth = Dimensions.get('window').width;
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-      weekday: 'short',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+  const chartConfig = {
+    backgroundGradientFrom: '#ffffff',
+    backgroundGradientTo: '#ffffff',
+    color: (opacity = 1) => `rgba(0, 122, 255, ${opacity})`,
+    strokeWidth: 2,
+    barPercentage: 0.5,
+    useShadowColorFromDataset: false
   };
 
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView 
+      style={styles.container}
+      contentContainerStyle={styles.scrollContent}
+    >
       <View style={styles.header}>
-        <View style={styles.welcomeContainer}>
-          <Text style={styles.welcomeText}>Welcome back,</Text>
-          <Text style={styles.nameText}>{firstName}</Text>
+        <View>
+          <Text style={styles.welcomeText}>Welcome, {firstName}</Text>
+          <Text style={styles.subtitle}>Your Eye Diagnosis Dashboard</Text>
         </View>
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+        <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
           <LogOut size={24} color="#007AFF" />
         </TouchableOpacity>
       </View>
 
       <View style={styles.statsContainer}>
         <View style={styles.statCard}>
-          <View style={styles.statIcon}>
-            <User size={24} color="#007AFF" />
-          </View>
-          <Text style={styles.statValue}>{patientCount}</Text>
-          <Text style={styles.statLabel}>Patients</Text>
+          <User size={24} color="#007AFF" />
+          <Text style={styles.statNumber}>{stats.patientCount}</Text>
+          <Text style={styles.statLabel}>Total Patients</Text>
         </View>
         <View style={styles.statCard}>
-          <View style={styles.statIcon}>
-            <Calendar size={24} color="#007AFF" />
-          </View>
-          <Text style={styles.statValue}>5</Text>
-          <Text style={styles.statLabel}>Appointments</Text>
-        </View>
-        <View style={styles.statCard}>
-          <View style={styles.statIcon}>
-            <Activity size={24} color="#007AFF" />
-          </View>
-          <Text style={styles.statValue}>8</Text>
-          <Text style={styles.statLabel}>Scans Today</Text>
+          <Activity size={24} color="#007AFF" />
+          <Text style={styles.statNumber}>
+            {stats.diseaseStats.reduce((sum, stat) => sum + stat.count, 0)}
+          </Text>
+          <Text style={styles.statLabel}>Total Diagnoses</Text>
         </View>
       </View>
 
-      <View style={styles.quickActions}>
-        <Text style={styles.sectionTitle}>Quick Actions</Text>
-        <View style={styles.actionButtons}>
-          <TouchableOpacity style={styles.actionButton} onPress={handleScheduleAppointment}>
-            <Clock size={24} color="#007AFF" />
-            <Text style={styles.actionButtonText}>Schedule Scan</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.actionButton} onPress={handleAddPatient}>
-            <Plus size={24} color="#007AFF" />
-            <Text style={styles.actionButtonText}>Add Patient</Text>
-          </TouchableOpacity>
+      {stats.monthlyStats.length > 0 ? (
+        <View style={styles.chartContainer}>
+          <Text style={styles.chartTitle}>Monthly Diagnoses</Text>
+          <LineChart
+            data={{
+              labels: stats.monthlyStats.map(stat => stat.month),
+              datasets: [{
+                data: stats.monthlyStats.map(stat => stat.count)
+              }]
+            }}
+            width={screenWidth - 32}
+            height={220}
+            chartConfig={chartConfig}
+            bezier
+            style={styles.chart}
+          />
         </View>
-      </View>
-
-      <View style={styles.appointmentsSection}>
-        <View style={styles.appointmentsHeader}>
-          <Text style={styles.sectionTitle}>Upcoming Appointments</Text>
-          <View style={styles.filterContainer}>
-            <Filter size={20} color="#666666" />
-            <TouchableOpacity
-              style={[styles.filterButton, filterStatus === 'all' && styles.filterButtonActive]}
-              onPress={() => setFilterStatus('all')}
-            >
-              <Text style={[styles.filterText, filterStatus === 'all' && styles.filterTextActive]}>All</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.filterButton, filterStatus === 'scheduled' && styles.filterButtonActive]}
-              onPress={() => setFilterStatus('scheduled')}
-            >
-              <Text style={[styles.filterText, filterStatus === 'scheduled' && styles.filterTextActive]}>Scheduled</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.filterButton, filterStatus === 'completed' && styles.filterButtonActive]}
-              onPress={() => setFilterStatus('completed')}
-            >
-              <Text style={[styles.filterText, filterStatus === 'completed' && styles.filterTextActive]}>Completed</Text>
-            </TouchableOpacity>
-          </View>
+      ) : (
+        <View style={styles.chartContainer}>
+          <Text style={styles.chartTitle}>Monthly Diagnoses</Text>
+          <Text style={styles.noDataText}>No diagnosis data available</Text>
         </View>
-
-        {filteredAppointments.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyStateText}>No appointments found</Text>
-            <Text style={styles.emptyStateSubtext}>
-              {filterStatus === 'all' 
-                ? 'Schedule a new appointment to get started'
-                : `No ${filterStatus} appointments`}
-            </Text>
-          </View>
-        ) : (
-          filteredAppointments.map((appointment) => (
-            <TouchableOpacity 
-              key={appointment.id} 
-              style={styles.appointmentCard}
-              onPress={() => handleAppointmentPress(appointment)}
-            >
-              <View style={styles.appointmentInfo}>
-                <Text style={styles.patientName}>{appointment.patient?.full_name || 'Unknown Patient'}</Text>
-                <Text style={styles.appointmentDate}>
-                  {formatDate(appointment.appointment_date)}
-                </Text>
-                <Text style={[
-                  styles.appointmentStatus,
-                  appointment.status === 'scheduled' && styles.statusScheduled,
-                  appointment.status === 'completed' && styles.statusCompleted,
-                  appointment.status === 'cancelled' && styles.statusCancelled
-                ]}>
-                  {appointment.status.charAt(0).toUpperCase() + appointment.status.slice(1)}
-                </Text>
-              </View>
-              <ChevronRight size={20} color="#666666" />
-            </TouchableOpacity>
-          ))
-        )}
-      </View>
-
-      {showDatePicker && (
-        <DateTimePicker
-          value={selectedDate}
-          mode="datetime"
-          display="default"
-          onChange={handleDateChange}
-          minimumDate={new Date()}
-        />
       )}
 
-      <Modal
-        visible={showPatientModal}
-        transparent={true}
-        animationType="slide"
-      >
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select Patient</Text>
-              <TouchableOpacity onPress={() => setShowPatientModal(false)}>
-                <X size={24} color="#666666" />
-              </TouchableOpacity>
-            </View>
-            <ScrollView style={styles.patientList}>
-              {patients.map((patient) => (
-                <TouchableOpacity
-                  key={patient.id}
-                  style={styles.patientItem}
-                  onPress={() => handlePatientSelect(patient)}
-                >
-                  <Text style={styles.patientName}>{patient.full_name}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
+      {stats.diseaseStats.length > 0 ? (
+        <View style={styles.chartContainer}>
+          <Text style={styles.chartTitle}>Disease Distribution</Text>
+          <PieChart
+            data={stats.diseaseStats}
+            width={screenWidth - 32}
+            height={220}
+            chartConfig={chartConfig}
+            accessor="count"
+            backgroundColor="transparent"
+            paddingLeft="15"
+            absolute
+          />
         </View>
-      </Modal>
-
-      <Modal
-        visible={showAppointmentModal}
-        transparent={true}
-        animationType="slide"
-      >
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Appointment Details</Text>
-              <TouchableOpacity onPress={() => setShowAppointmentModal(false)}>
-                <X size={24} color="#666666" />
-              </TouchableOpacity>
-            </View>
-            
-            {selectedAppointment && (
-              <View style={styles.appointmentDetails}>
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Patient:</Text>
-                  <Text style={styles.detailValue}>{selectedAppointment.patient?.full_name || 'Unknown Patient'}</Text>
-                </View>
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Date & Time:</Text>
-                  <Text style={styles.detailValue}>{formatDate(selectedAppointment.appointment_date)}</Text>
-                </View>
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Status:</Text>
-                  <Text style={[
-                    styles.detailValue,
-                    styles.statusText,
-                    selectedAppointment.status === 'scheduled' && styles.statusScheduled,
-                    selectedAppointment.status === 'completed' && styles.statusCompleted,
-                    selectedAppointment.status === 'cancelled' && styles.statusCancelled
-                  ]}>
-                    {selectedAppointment.status.charAt(0).toUpperCase() + selectedAppointment.status.slice(1)}
-                  </Text>
-                </View>
-
-                {selectedAppointment.status === 'scheduled' && (
-                  <TouchableOpacity 
-                    style={styles.cancelButton}
-                    onPress={handleCancelAppointment}
-                    disabled={isCancelling}
-                  >
-                    <Trash2 size={20} color="#FF3B30" />
-                    <Text style={styles.cancelButtonText}>
-                      {isCancelling ? 'Cancelling...' : 'Cancel Appointment'}
-                    </Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            )}
-          </View>
+      ) : (
+        <View style={styles.chartContainer}>
+          <Text style={styles.chartTitle}>Disease Distribution</Text>
+          <Text style={styles.noDataText}>No disease distribution data available</Text>
         </View>
-      </Modal>
+      )}
+
+      <TouchableOpacity style={styles.addButton} onPress={handleAddPatient}>
+        <Plus size={24} color="#ffffff" />
+        <Text style={styles.addButtonText}>Add New Patient</Text>
+      </TouchableOpacity>
     </ScrollView>
   );
 }
@@ -465,252 +309,114 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8F9FA',
+    backgroundColor: '#ffffff',
+  },
+  scrollContent: {
+    paddingBottom: Platform.OS === 'ios' ? 120 : 100,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F8F9FA',
+    backgroundColor: '#ffffff',
   },
   header: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    paddingTop: 60,
-    backgroundColor: '#ffffff',
-  },
-  welcomeContainer: {
-    flex: 1,
-  },
-  welcomeText: {
-    fontSize: 16,
-    fontFamily: 'Inter-Regular',
-    color: '#666666',
-  },
-  nameText: {
-    fontSize: 28,
-    fontFamily: 'PlusJakartaSans-SemiBold',
-    color: '#1A1A1A',
-    marginTop: 4,
-  },
-  logoutButton: {
-    padding: 8,
-    backgroundColor: '#F8F9FA',
-    borderRadius: 8,
-  },
-  statsContainer: {
-    flexDirection: 'row',
-    padding: 20,
-    gap: 16,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
     padding: 16,
-    alignItems: 'center',
+    paddingTop: Platform.OS === 'ios' ? 60 : 40,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E5EA',
   },
-  statIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#F0F7FF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  statValue: {
-    fontSize: 24,
-    fontFamily: 'PlusJakartaSans-SemiBold',
-    color: '#1A1A1A',
-  },
-  statLabel: {
-    fontSize: 12,
-    fontFamily: 'Inter-Regular',
-    color: '#666666',
-    marginTop: 4,
-  },
-  quickActions: {
-    padding: 20,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontFamily: 'PlusJakartaSans-SemiBold',
-    color: '#1A1A1A',
-    marginBottom: 16,
-  },
-  actionButtons: {
-    flexDirection: 'row',
-    gap: 16,
-  },
-  actionButton: {
-    flex: 1,
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    padding: 16,
+  userInfo: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
   },
-  actionButtonText: {
-    fontSize: 14,
-    fontFamily: 'Inter-SemiBold',
-    color: '#1A1A1A',
-  },
-  modalContainer: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: '#ffffff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
-    maxHeight: '80%',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F0F0F0',
+    justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
   },
-  modalTitle: {
-    fontSize: 20,
-    fontFamily: 'PlusJakartaSans-SemiBold',
-    color: '#1A1A1A',
+  welcomeText: {
+    fontSize: 18,
+    color: '#000000',
+    fontWeight: 'bold',
   },
-  patientList: {
-    maxHeight: 300,
+  userName: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#000000',
   },
-  patientItem: {
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E5EA',
-  },
-  patientName: {
+  subtitle: {
     fontSize: 16,
-    fontFamily: 'Inter-Regular',
-    color: '#1A1A1A',
+    color: '#8E8E93',
+    marginTop: 4,
   },
-  appointmentsSection: {
-    padding: 20,
+  logoutButton: {
+    padding: 8,
   },
-  appointmentsHeader: {
+  statsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
+    padding: 16,
   },
-  filterContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  filterButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
+  statCard: {
+    flex: 1,
     backgroundColor: '#F8F9FA',
-  },
-  filterButtonActive: {
-    backgroundColor: '#007AFF',
-  },
-  filterText: {
-    fontSize: 12,
-    fontFamily: 'Inter-SemiBold',
-    color: '#666666',
-  },
-  filterTextActive: {
-    color: '#ffffff',
-  },
-  appointmentCard: {
-    backgroundColor: '#ffffff',
     borderRadius: 12,
     padding: 16,
-    marginBottom: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  appointmentInfo: {
-    flex: 1,
-  },
-  appointmentDate: {
-    fontSize: 14,
-    fontFamily: 'Inter-Regular',
-    color: '#666666',
-    marginBottom: 4,
-  },
-  appointmentStatus: {
-    fontSize: 12,
-    fontFamily: 'Inter-SemiBold',
-    color: '#FF9500',
-  },
-  statusScheduled: {
-    color: '#FF9500',
-  },
-  statusCompleted: {
-    color: '#34C759',
-  },
-  statusCancelled: {
-    color: '#FF3B30',
-  },
-  emptyState: {
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    padding: 24,
+    marginHorizontal: 8,
     alignItems: 'center',
   },
-  emptyStateText: {
-    fontSize: 16,
-    fontFamily: 'PlusJakartaSans-SemiBold',
+  statNumber: {
+    fontSize: 24,
+    fontWeight: 'bold',
     color: '#1A1A1A',
-    marginBottom: 8,
+    marginVertical: 8,
   },
-  emptyStateSubtext: {
+  statLabel: {
     fontSize: 14,
-    fontFamily: 'Inter-Regular',
-    color: '#666666',
-    textAlign: 'center',
+    color: '#8E8E93',
   },
-  appointmentDetails: {
+  chartContainer: {
+    marginTop: 16,
     padding: 16,
   },
-  detailRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  chartTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1A1A1A',
     marginBottom: 16,
   },
-  detailLabel: {
-    fontSize: 14,
-    fontFamily: 'Inter-SemiBold',
-    color: '#666666',
+  chart: {
+    marginVertical: 8,
+    borderRadius: 16,
   },
-  detailValue: {
-    fontSize: 14,
-    fontFamily: 'Inter-Regular',
-    color: '#1A1A1A',
+  noDataText: {
+    fontSize: 16,
+    color: '#8E8E93',
+    textAlign: 'center',
+    marginVertical: 32,
   },
-  statusText: {
-    fontFamily: 'Inter-SemiBold',
-  },
-  cancelButton: {
+  addButton: {
+    backgroundColor: '#007AFF',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FFF5F5',
-    padding: 12,
-    borderRadius: 8,
-    marginTop: 16,
-    gap: 8,
+    padding: 16,
+    margin: 16,
+    borderRadius: 12,
+    marginBottom: Platform.OS === 'ios' ? 32 : 16,
   },
-  cancelButtonText: {
-    fontSize: 14,
-    fontFamily: 'Inter-SemiBold',
-    color: '#FF3B30',
+  addButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginLeft: 8,
   },
 }); 
